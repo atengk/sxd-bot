@@ -36,6 +36,12 @@
 
 ```text
 sxd_bot/
+├── CONTEXT.md                  # 领域模型统一语言与术语表
+├── docs/
+│   ├── adr/                    # 架构决策记录 (0001 ~ 0006)
+│   ├── protocol/               # 逆向协议二进制封包规约速查矩阵
+│   ├── architecture/           # 架构模型与执行生命周期指南
+│   └── tools/                  # 逆向与流量嗅探 MCP 工具链实战指南
 ├── config/
 │   ├── config.example.json     # 配置文件模板
 │   └── config.json             # 真实本地凭据 (Git 已自动忽略)
@@ -118,3 +124,21 @@ python main.py -t hero_mission
 # 多人副本
 python main.py -t multi_mission
 ```
+
+---
+
+## 4. 架构与领域文档导航
+
+- **统一语言与领域术语**：[CONTEXT.md](./CONTEXT.md)
+- **架构决策记录 (ADR)**：
+  - [0001 无头原生 TCP 长连接架构](./docs/adr/0001-headless-tcp-socket-architecture.md)
+  - [0002 自适应 3 步 Web 鉴权凭据换取机制](./docs/adr/0002-adaptive-web-auth-credential-exchange.md)
+  - [0003 协议封包滑动窗口分帧与编解码状态机](./docs/adr/0003-binary-packet-framing-and-codec.md)
+  - [0004 零元宝安全熔断机制与前置卫语句跳过策略](./docs/adr/0004-zero-ingot-guardrail-and-fail-fast-skipping.md)
+  - [0005 统一事件总线与双模任务调度器](./docs/adr/0005-unified-eventbus-and-dual-mode-scheduler.md)
+  - [0006 Agent-Native MCP 逆向与流量嗅探工具链](./docs/adr/0006-agent-native-mcp-reverse-toolchain.md)
+- **逆向协议封包速查表**：[docs/protocol/mod_action_matrix.md](./docs/protocol/mod_action_matrix.md)
+- **系统架构模型与生命周期指南**：[docs/architecture/pipeline_and_lifecycle.md](./docs/architecture/pipeline_and_lifecycle.md)
+- **MCP 逆向与抓包工具链指南**：[docs/tools/mcp_reverse_and_traffic.md](./docs/tools/mcp_reverse_and_traffic.md)
+
+
