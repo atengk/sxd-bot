@@ -1,0 +1,13 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local user configuration containing sensitive tokens
+config/config.json
+.env
+
+# Capture files and logs
+*.pcap
+*.pcapng
+*.log

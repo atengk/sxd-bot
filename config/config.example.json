@@ -1,0 +1,23 @@
+{
+  "auth_mode": "static",
+  "static_credentials": {
+    "server_host": "127.0.0.1",
+    "server_port": 8062,
+    "player_name": "YOUR_USERNAME",
+    "hash_code": "YOUR_TOKEN_HASH",
+    "time": "1792065385",
+    "platform": "fengwanyx",
+    "server_id": 25268,
+    "nickname": "YOUR_NICKNAME"
+  },
+  "web_auth": {
+    "login_url": "http://s813.sxd.fengwanyx.com/index_wd.php",
+    "username": "YOUR_ACCOUNT",
+    "cookie": "YOUR_SESSION_COOKIE"
+  },
+  "automation": {
+    "enable_heartbeat": true,
+    "heartbeat_interval_sec": 3.0,
+    "enable_auto_routine": true
+  }
+}
