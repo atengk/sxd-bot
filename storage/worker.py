@@ -104,13 +104,13 @@ class StorageWorker:
         self.submit(StorageTask(task_type="custom", data=action))
 
     def flush(self, timeout: float = 5.0) -> None:
-        """阻塞等待当前队列中的全部任务执行完毕"""
+        """阻塞等待当前队列中的全部任务执行完毕并落盘"""
         deadline = time.time() + timeout
-        while not self._queue.empty():
+        while self._queue.unfinished_tasks > 0:
             if time.time() > deadline:
                 logger.warning("StorageWorker 等待队列排空超时")
                 break
-            time.sleep(0.01)
+            time.sleep(0.005)
 
     def stop(self, timeout: float = 5.0) -> None:
         """优雅关闭工作线程并确保剩余任务全部入库"""

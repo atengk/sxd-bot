@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import inspect
 import logging
 from typing import Callable, Coroutine, Dict, List, Tuple, Any
 
@@ -62,7 +63,7 @@ class EventBus:
         # 2. 并发非阻塞调用所有回调
         for h in handlers:
             try:
-                if asyncio.iscoroutinefunction(h):
+                if inspect.iscoroutinefunction(h):
                     asyncio.create_task(h(mod, act, payload))
                 else:
                     h(mod, act, payload)

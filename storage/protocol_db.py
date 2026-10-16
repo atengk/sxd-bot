@@ -247,6 +247,8 @@ class ProtocolRepository:
                 for r in cursor.fetchall()
             ]
 
+    get_all_modules = list_modules
+
     def get_action(self, module_id: int, action_id: int) -> Optional[ActionMeta]:
         """查询指定模块内的特定动作定义"""
         with self.db.connect() as conn:
