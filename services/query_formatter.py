@@ -8,7 +8,8 @@
 
 import json
 from typing import Any, Dict, List
-from services.query_models import PlayerAssetDTO, RoleDTO, AssistantDailyDTO
+from services.query_models import PlayerAssetDTO, RoleDTO, AssistantDailyDTO, PackSummaryDTO
+
 
 
 class QueryFormatter:
@@ -123,4 +124,52 @@ class QueryFormatter:
             "data": dto.to_dict(),
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def format_pack_table(dto: PackSummaryDTO) -> str:
+        """格式化主背包与随身仓库盘点看板表格"""
+        warn_str = "[警告: 背包空间紧张，建议变卖杂物]" if dto.is_space_low else "[空间充裕]"
+        lines = [
+            "=" * 72,
+            "            神仙道主背包与随身仓库盘点看板 (Pack & Inventory)",
+            "=" * 72,
+            f"  主背包容量 : {dto.pack_used} / {dto.pack_capacity} 格 (剩余 {dto.pack_empty} 空格) {warn_str}",
+            f"  随身仓库   : {dto.warehouse_used} / {dto.warehouse_capacity} 格 (剩余 {dto.warehouse_empty} 空格)",
+            f"  战略总储备 : 可补充体力: +{dto.total_potential_power} 点 | 潜在经验: +{dto.total_potential_exp:,} 点",
+            "-" * 72,
+            "  【核心战略消耗品与礼包汇总】",
+            f"   {'名称':<16} | {'数量':<8} | {'类型':<10} | {'潜在收益折算':<20}",
+            "-" * 72,
+        ]
+        if not dto.strategic_items:
+            lines.append("   (暂无核心战略消耗品或礼包)")
+        else:
+            for it in dto.strategic_items:
+                benefits = []
+                if it.potential_power > 0:
+                    benefits.append(f"体力 +{it.potential_power} 点")
+                if it.potential_exp > 0:
+                    benefits.append(f"经验 +{it.potential_exp:,} 点")
+                benefit_str = ", ".join(benefits) if benefits else "-"
+                lines.append(
+                    f"   {it.name:<16} | {it.count:<8} | {it.type_desc:<10} | {benefit_str:<20}"
+                )
+        lines.append("-" * 72)
+        lines.append("  【物品大类宏观分布】")
+        cat_parts = [f"{k}: {v} 件" for k, v in dto.category_counts.items()]
+        cat_str = " | ".join(cat_parts) if cat_parts else "暂无物品"
+        lines.append(f"   {cat_str}")
+        lines.append("=" * 72)
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_pack_json(dto: PackSummaryDTO) -> str:
+        """导出背包与随身仓库盘点数据为标准 JSON 字符串"""
+        payload = {
+            "status": "success",
+            "type": "pack",
+            "data": dto.to_dict(),
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
 

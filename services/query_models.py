@@ -160,3 +160,78 @@ class AssistantDailyDTO:
             "boxes": [bx.to_dict() for bx in self.boxes],
         }
 
+
+@dataclass
+class InventoryItemDTO:
+    """背包/随身仓库单项物品传输模型
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    grid_id: int = 0
+    item_id: int = 0
+    name: str = ""
+    count: int = 1
+    item_type: int = 0
+    type_desc: str = ""
+    potential_power: int = 0
+    potential_exp: int = 0
+    is_strategic: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准字典"""
+        return {
+            "grid_id": self.grid_id,
+            "item_id": self.item_id,
+            "name": self.name,
+            "count": self.count,
+            "item_type": self.item_type,
+            "type_desc": self.type_desc,
+            "potential_power": self.potential_power,
+            "potential_exp": self.potential_exp,
+            "is_strategic": self.is_strategic,
+        }
+
+
+@dataclass
+class PackSummaryDTO:
+    """主背包与随身仓库全局盘点传输模型
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    pack_capacity: int = 0
+    pack_used: int = 0
+    pack_empty: int = 0
+    warehouse_capacity: int = 0
+    warehouse_used: int = 0
+    warehouse_empty: int = 0
+    is_space_low: bool = False
+    total_potential_power: int = 0
+    total_potential_exp: int = 0
+    category_counts: Dict[str, int] = field(default_factory=dict)
+    strategic_items: List[InventoryItemDTO] = field(default_factory=list)
+    items: List[InventoryItemDTO] = field(default_factory=list)
+    warehouse_items: List[InventoryItemDTO] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准字典"""
+        return {
+            "pack_capacity": self.pack_capacity,
+            "pack_used": self.pack_used,
+            "pack_empty": self.pack_empty,
+            "warehouse_capacity": self.warehouse_capacity,
+            "warehouse_used": self.warehouse_used,
+            "warehouse_empty": self.warehouse_empty,
+            "is_space_low": self.is_space_low,
+            "total_potential_power": self.total_potential_power,
+            "total_potential_exp": self.total_potential_exp,
+            "category_counts": self.category_counts,
+            "strategic_items": [it.to_dict() for it in self.strategic_items],
+            "items": [it.to_dict() for it in self.items],
+            "warehouse_items": [it.to_dict() for it in self.warehouse_items],
+        }
+
+

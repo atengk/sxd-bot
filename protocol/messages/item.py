@@ -248,3 +248,109 @@ class ItemAddPackGridReq(BasePacket):
         reader = ByteArrayReader(data)
         cnt = reader.read_int32() if reader.remaining >= 4 else 0
         return cls(grid_count=cnt, allow_ingot=True)
+
+
+@dataclass
+class ItemGetPlayerPackItemListReq(BasePacket):
+    """获取玩家主背包与随身仓库物品列表请求 (Mod 2, Act 41) - [SAFE_READ]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    def __init__(self) -> None:
+        super().__init__(mod=2, act=41)
+
+    def encode_payload(self) -> bytes:
+        return b""
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemGetPlayerPackItemListReq":
+        return cls()
+
+
+@dataclass
+class ItemGetPlayerPackItemListResp(BasePacket):
+    """玩家主背包与随身仓库物品列表应答 (Mod 2, Act 41) - [SAFE_READ]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    pack_capacity: int = 0
+    pack_empty_grids: int = 0
+    pack_items: List[Any] = field(default_factory=list)
+    warehouse_capacity: int = 0
+    warehouse_items: List[Any] = field(default_factory=list)
+    raw_payload: bytes = b""
+
+    def __init__(
+        self,
+        pack_capacity: int = 0,
+        pack_empty_grids: int = 0,
+        pack_items: Optional[List[Any]] = None,
+        warehouse_capacity: int = 0,
+        warehouse_items: Optional[List[Any]] = None,
+        raw_payload: bytes = b"",
+    ) -> None:
+        super().__init__(mod=2, act=41)
+        self.pack_capacity = pack_capacity
+        self.pack_empty_grids = pack_empty_grids
+        self.pack_items = pack_items or []
+        self.warehouse_capacity = warehouse_capacity
+        self.warehouse_items = warehouse_items or []
+        self.raw_payload = raw_payload
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_int16(self.pack_capacity)
+        writer.write_int32(self.pack_empty_grids)
+        writer.write_uint16(len(self.pack_items))
+        for item in self.pack_items:
+            writer.write_json(item)
+        writer.write_int16(self.warehouse_capacity)
+        writer.write_uint16(len(self.warehouse_items))
+        for item in self.warehouse_items:
+            writer.write_json(item)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemGetPlayerPackItemListResp":
+        reader = ByteArrayReader(data)
+        pack_cap = 0
+        empty_grids = 0
+        pack_items: List[Any] = []
+        wh_cap = 0
+        wh_items: List[Any] = []
+
+        try:
+            if reader.remaining >= 2:
+                pack_cap = reader.read_int16()
+            if reader.remaining >= 4:
+                empty_grids = reader.read_int32()
+            if reader.remaining >= 2:
+                cnt_pack = reader.read_uint16()
+                for _ in range(cnt_pack):
+                    if reader.remaining == 0:
+                        break
+                    pack_items.append(reader.read_json())
+            if reader.remaining >= 2:
+                wh_cap = reader.read_int16()
+            if reader.remaining >= 2:
+                cnt_wh = reader.read_uint16()
+                for _ in range(cnt_wh):
+                    if reader.remaining == 0:
+                        break
+                    wh_items.append(reader.read_json())
+        except Exception:
+            pass
+
+        return cls(
+            pack_capacity=pack_cap,
+            pack_empty_grids=empty_grids,
+            pack_items=pack_items,
+            warehouse_capacity=wh_cap,
+            warehouse_items=wh_items,
+            raw_payload=data,
+        )
+

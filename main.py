@@ -355,7 +355,14 @@ async def run_query_mode(config: dict, query_target: str, as_json: bool = False)
                 print(QueryFormatter.format_assistant_json(dto))
             else:
                 print(QueryFormatter.format_assistant_table(dto))
+        elif query_target == "pack":
+            pack_summary = await query_service.query_pack()
+            if as_json:
+                print(QueryFormatter.format_pack_json(pack_summary))
+            else:
+                print(QueryFormatter.format_pack_table(pack_summary))
         else:
+
 
             logger.warning("查询目标 '%s' 暂未就绪或未识别，支持选项: ['assets', 'roles', 'assistant', 'pack', 'all']", query_target)
 

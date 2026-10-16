@@ -29,11 +29,15 @@ from services.query_models import (
     AssistantDailyDTO,
     AssistantDailyItemDTO,
     AssistantLivenessBoxDTO,
+    InventoryItemDTO,
+    PackSummaryDTO,
 )
 from services.query_service import QueryService
 from services.query_formatter import QueryFormatter
 from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
 from protocol.messages.assistant import AssistantInfoReq, AssistantInfoResp
+from protocol.messages.item import ItemGetPlayerPackItemListReq, ItemGetPlayerPackItemListResp
+
 
 
 class TestQueryService(unittest.IsolatedAsyncioTestCase):
@@ -526,5 +530,186 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
             self.assertIn("招财神符", output)
 
 
+    # ==================== 9. 主背包与随身仓库 (Item / Pack: Mod 2) 盘点测试 ====================
+
+    def _build_mock_pack_payload(self) -> bytes:
+        """构造 Mod 2 Act 41 get_player_pack_item_list 二进制应答桩"""
+        writer = ByteArrayWriter()
+        # field_0: 背包总格数 (48)
+        writer.write_int16(48)
+        # field_1: 背包空余格数 (4格，处于空间紧张预警状态 < 5)
+        writer.write_int32(4)
+
+        # field_2: 主背包物品列表 (3 件)
+        writer.write_uint16(3)
+        # 物品 1: 初级体力丹 (ID=1001, 数量=3, item_type=2 消耗品, grid_id=1)
+        writer.write_json([1, 1001, 1, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        # 物品 2: 高级体力丹 (ID=1003, 数量=1, item_type=2 消耗品, grid_id=2)
+        writer.write_json([2, 1003, 2, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        # 物品 3: 普通装备 (ID=8888, 数量=1, item_type=1 装备, grid_id=3)
+        writer.write_json([3, 8888, 3, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+        # field_3: 随身仓库总格数 (36)
+        writer.write_int16(36)
+
+        # field_4: 随身仓库物品列表 (1 件)
+        writer.write_uint16(1)
+        # 物品 4: 中级经验丹 (ID=2002, 数量=2, item_type=2 消耗品, grid_id=1)
+        writer.write_json([4, 2002, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+        return writer.to_bytes()
+
+    def test_pack_dto_to_dict(self) -> None:
+        """验证 InventoryItemDTO 与 PackSummaryDTO 字典序列化"""
+        item = InventoryItemDTO(
+            grid_id=1,
+            item_id=1001,
+            name="初级体力丹",
+            count=3,
+            item_type=2,
+            type_desc="战略消耗",
+            potential_power=150,
+            potential_exp=0,
+            is_strategic=True,
+        )
+        dto = PackSummaryDTO(
+            pack_capacity=48,
+            pack_used=44,
+            pack_empty=4,
+            warehouse_capacity=36,
+            warehouse_used=12,
+            warehouse_empty=24,
+            is_space_low=True,
+            total_potential_power=150,
+            total_potential_exp=0,
+            category_counts={"战略消耗": 3, "装备": 1},
+            strategic_items=[item],
+            items=[item],
+            warehouse_items=[],
+        )
+
+        d = dto.to_dict()
+        self.assertEqual(d["pack_capacity"], 48)
+        self.assertEqual(d["pack_empty"], 4)
+        self.assertTrue(d["is_space_low"])
+        self.assertEqual(d["total_potential_power"], 150)
+        self.assertEqual(len(d["strategic_items"]), 1)
+        self.assertEqual(d["strategic_items"][0]["name"], "初级体力丹")
+        self.assertEqual(d["strategic_items"][0]["potential_power"], 150)
+
+    async def test_query_pack_service_and_storage_persistence(self) -> None:
+        """验证 QueryService.query_pack 战略消耗品收益折算、大类聚合、空间预警与 SQLite 持久化"""
+        mock_payload = self._build_mock_pack_payload()
+        self.client.request = AsyncMock(return_value=mock_payload)
+
+        service = QueryService(self.client, self.ctx, self.player_db)
+        dto = await service.query_pack()
+
+        # 1. 验证容量与预警状态
+        self.assertEqual(dto.pack_capacity, 48)
+        self.assertEqual(dto.pack_empty, 4)
+        self.assertEqual(dto.pack_used, 44)
+        self.assertTrue(dto.is_space_low)  # 剩余 4 格 < 5，预警激活
+        self.assertEqual(dto.warehouse_capacity, 36)
+
+        # 2. 验证战略消耗品识别与收益折算 (初级体力丹 3*50=150, 高级体力丹 1*200=200 => 350; 中级经验丹 2*50000=100000)
+        self.assertEqual(dto.total_potential_power, 350)
+        self.assertEqual(dto.total_potential_exp, 100000)
+        self.assertEqual(len(dto.strategic_items), 3)
+
+        # 3. 验证未识别道具大类聚合
+        self.assertEqual(dto.category_counts.get("装备", 0), 1)
+
+        # 4. 验证即查即存与 SQLite tb_inventory 落盘
+        stored_items = self.player_db.get_inventory_items()
+        self.assertEqual(len(stored_items), 3)  # 主背包 3 件物品写入 tb_inventory
+        self.assertEqual(stored_items[0].item_id, 1001)
+        self.assertEqual(stored_items[0].count, 3)
+
+        # 验证子系统状态快照
+        state = self.player_db.get_module_state(module_id=2, state_key="pack_summary")
+        self.assertIsNotNone(state)
+        self.assertEqual(state.payload["total_potential_power"], 350)
+
+        # 5. 坚守只读防线：只发起 Mod 2 Act 41 请求，绝无使用道具或开启格子写操作
+        self.assertEqual(self.client.request.await_count, 1)
+        called_packet = self.client.request.await_args[0][0]
+        self.assertEqual(called_packet.mod, 2)
+        self.assertEqual(called_packet.act, 41)
+
+    def test_query_formatter_pack_table_and_json(self) -> None:
+        """验证 QueryFormatter 输出背包盘点表格与 JSON"""
+        item = InventoryItemDTO(
+            grid_id=1,
+            item_id=1001,
+            name="初级体力丹",
+            count=3,
+            item_type=2,
+            type_desc="战略消耗",
+            potential_power=150,
+            is_strategic=True,
+        )
+        dto = PackSummaryDTO(
+            pack_capacity=48,
+            pack_used=44,
+            pack_empty=4,
+            warehouse_capacity=36,
+            warehouse_used=12,
+            warehouse_empty=24,
+            is_space_low=True,
+            total_potential_power=350,
+            total_potential_exp=100000,
+            category_counts={"战略消耗": 3, "装备": 1},
+            strategic_items=[item],
+            items=[item],
+            warehouse_items=[],
+        )
+
+        table = QueryFormatter.format_pack_table(dto)
+        self.assertIn("神仙道主背包与随身仓库盘点看板", table)
+        self.assertIn("空间紧张", table)
+        self.assertIn("初级体力丹", table)
+        self.assertIn("+350 点", table)
+
+        json_str = QueryFormatter.format_pack_json(dto)
+        data = json.loads(json_str)
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["type"], "pack")
+        self.assertTrue(data["data"]["is_space_low"])
+        self.assertEqual(data["data"]["total_potential_power"], 350)
+
+    async def test_run_query_mode_pack(self) -> None:
+        """验证 main.py run_query_mode query_target='pack'"""
+        from io import StringIO
+        import sys
+        from unittest.mock import patch
+        from main import run_query_mode
+
+        config = {
+            "auth_mode": "static",
+            "server": {"host": "127.0.0.1", "port": 8000},
+            "credentials": {"player_name": "test_user", "server_id": 1},
+        }
+
+        captured_out = StringIO()
+        with patch.object(SXDClient, "connect", new=AsyncMock(return_value=True)), \
+             patch.object(SXDClient, "disconnect", new=AsyncMock(return_value=None)), \
+             patch("main.LoginTask.execute", new=AsyncMock(return_value=MagicMock(is_success=True))), \
+             patch.object(QueryService, "query_pack", new=AsyncMock(return_value=PackSummaryDTO(
+                 pack_capacity=48,
+                 pack_used=44,
+                 pack_empty=4,
+                 is_space_low=True,
+                 total_potential_power=350,
+                 strategic_items=[InventoryItemDTO(name="高级体力丹", count=1, potential_power=200)],
+             ))), \
+             patch.object(sys, "stdout", captured_out):
+            await run_query_mode(config, query_target="pack", as_json=False)
+            output = captured_out.getvalue()
+            self.assertIn("神仙道主背包与随身仓库盘点看板", output)
+            self.assertIn("高级体力丹", output)
+
+
 if __name__ == "__main__":
     unittest.main()
+

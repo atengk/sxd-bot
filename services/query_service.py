@@ -7,23 +7,53 @@
 """
 
 import logging
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from core.context import GameContext
 from network.client import SXDClient
 from protocol.builder import PacketBuilder
 from protocol.messages.player import PlayerInfoResp
 from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
 from protocol.messages.assistant import AssistantInfoReq, AssistantInfoResp
+from protocol.messages.item import ItemGetPlayerPackItemListReq, ItemGetPlayerPackItemListResp
 from services.query_models import (
     PlayerAssetDTO,
     RoleDTO,
     AssistantDailyDTO,
     AssistantDailyItemDTO,
     AssistantLivenessBoxDTO,
+    InventoryItemDTO,
+    PackSummaryDTO,
 )
-from storage.player_db import PlayerDatabase, PlayerProfileRecord, ModuleStateRecord
+from storage.player_db import (
+    PlayerDatabase,
+    PlayerProfileRecord,
+    ModuleStateRecord,
+    InventoryItemRecord,
+)
 
 logger = logging.getLogger(__name__)
+
+ImportantItemRegistry: Dict[int, Dict[str, Any]] = {
+    1001: {"name": "初级体力丹", "category": "战略消耗", "power": 50, "exp": 0},
+    1002: {"name": "中级体力丹", "category": "战略消耗", "power": 100, "exp": 0},
+    1003: {"name": "高级体力丹", "category": "战略消耗", "power": 200, "exp": 0},
+    1004: {"name": "特级体力丹", "category": "战略消耗", "power": 500, "exp": 0},
+    2001: {"name": "初级经验丹", "category": "战略消耗", "power": 0, "exp": 10000},
+    2002: {"name": "中级经验丹", "category": "战略消耗", "power": 0, "exp": 50000},
+    2003: {"name": "高级经验丹", "category": "战略消耗", "power": 0, "exp": 200000},
+    3001: {"name": "节日自选礼包盒", "category": "战略礼包", "power": 0, "exp": 0, "is_gift": True},
+    3002: {"name": "活跃度宝箱", "category": "战略礼包", "power": 0, "exp": 0, "is_gift": True},
+    3003: {"name": "仙令自选福袋", "category": "战略礼包", "power": 0, "exp": 0, "is_gift": True},
+}
+
+ItemCategoryManifest: Dict[int, str] = {
+    1: "装备",
+    2: "消耗品",
+    3: "材料",
+    4: "任务道具",
+    5: "命格/灵石",
+    6: "符印/法宝",
+}
 
 AssistantItemManifest: Dict[int, str] = {
     1: "招财神符",
@@ -58,6 +88,7 @@ def _format_box_status(status: int) -> str:
         return "背包已满"
     else:
         return f"状态({status})"
+
 
 
 
@@ -291,4 +322,155 @@ class QueryService:
                 logger.warning("本地 SQLite 小助手快照写入失败 (非致命): %s", e)
 
         return dto
+
+
+    async def query_pack(self, timeout_sec: float = 3.0) -> PackSummaryDTO:
+        """查询主背包与随身仓库道具盘点看板 (Mod 2, Act 41: get_player_pack_item_list)
+
+        发起只读状态请求，统计主背包与仓库格位占用、空间预警、核心战略消耗品收益折算，
+        并将提取到的道具列表同步落盘至本地 SQLite tb_inventory 表。
+
+        @author Ateng
+        @since 2026-10-16
+
+        Args:
+            timeout_sec: 网络请求等待超时秒数。
+
+        Returns:
+            主背包与随身仓库全局盘点强类型传输对象。
+        """
+        logger.info("正在查询主背包与随身仓库物品列表 (Mod 2, Act 41: get_player_pack_item_list)...")
+
+        pack_capacity = 0
+        pack_empty = 0
+        warehouse_capacity = 0
+        raw_pack_items: List[Any] = []
+        raw_wh_items: List[Any] = []
+
+        try:
+            req_pkt = ItemGetPlayerPackItemListReq()
+            resp_bytes = await self.client.request(req_pkt, timeout_sec=timeout_sec)
+            if resp_bytes:
+                resp = ItemGetPlayerPackItemListResp.decode(resp_bytes)
+                pack_capacity = resp.pack_capacity
+                pack_empty = resp.pack_empty_grids
+                warehouse_capacity = resp.warehouse_capacity
+                raw_pack_items = resp.pack_items
+                raw_wh_items = resp.warehouse_items
+        except Exception as exc:
+            logger.warning("发包拉取 Mod 2 Act 41 背包道具数据异常: %s", exc)
+
+        pack_used = max(0, pack_capacity - pack_empty) if pack_capacity > 0 else len(raw_pack_items)
+        is_space_low = pack_empty < 5
+
+        def _parse_raw_item(raw: Any) -> Optional[InventoryItemDTO]:
+            if not isinstance(raw, (list, tuple)) or len(raw) < 3:
+                return None
+            player_item_id = int(raw[0])
+            item_id = int(raw[1])
+            grid_id = int(raw[2])
+            item_type = int(raw[9]) if len(raw) > 9 else 0
+            count = int(raw[10]) if len(raw) > 10 else 1
+
+            if item_id in ImportantItemRegistry:
+                meta = ImportantItemRegistry[item_id]
+                name = meta["name"]
+                type_desc = meta["category"]
+                power = meta.get("power", 0) * count
+                exp = meta.get("exp", 0) * count
+                is_strategic = True
+            else:
+                name = f"道具 #{item_id}"
+                type_desc = ItemCategoryManifest.get(item_type, "普通杂物")
+                power = 0
+                exp = 0
+                is_strategic = False
+
+            return InventoryItemDTO(
+                grid_id=grid_id,
+                item_id=item_id,
+                name=name,
+                count=max(1, count),
+                item_type=item_type,
+                type_desc=type_desc,
+                potential_power=power,
+                potential_exp=exp,
+                is_strategic=is_strategic,
+            )
+
+        items_dto: List[InventoryItemDTO] = []
+        strategic_items: List[InventoryItemDTO] = []
+        category_counts: Dict[str, int] = {}
+
+        total_potential_power = 0
+        total_potential_exp = 0
+
+        # 1. 解析主背包物品
+        for raw in raw_pack_items:
+            it = _parse_raw_item(raw)
+            if it:
+                items_dto.append(it)
+                category_counts[it.type_desc] = category_counts.get(it.type_desc, 0) + 1
+                if it.is_strategic:
+                    strategic_items.append(it)
+                    total_potential_power += it.potential_power
+                    total_potential_exp += it.potential_exp
+
+        # 2. 解析随身仓库物品
+        wh_items_dto: List[InventoryItemDTO] = []
+        for raw in raw_wh_items:
+            it = _parse_raw_item(raw)
+            if it:
+                wh_items_dto.append(it)
+                if it.is_strategic:
+                    strategic_items.append(it)
+                    total_potential_power += it.potential_power
+                    total_potential_exp += it.potential_exp
+
+        warehouse_used = len(wh_items_dto)
+        warehouse_empty = max(0, warehouse_capacity - warehouse_used)
+
+        dto = PackSummaryDTO(
+            pack_capacity=pack_capacity,
+            pack_used=pack_used,
+            pack_empty=pack_empty,
+            warehouse_capacity=warehouse_capacity,
+            warehouse_used=warehouse_used,
+            warehouse_empty=warehouse_empty,
+            is_space_low=is_space_low,
+            total_potential_power=total_potential_power,
+            total_potential_exp=total_potential_exp,
+            category_counts=category_counts,
+            strategic_items=strategic_items,
+            items=items_dto,
+            warehouse_items=wh_items_dto,
+        )
+
+        # 3. 即查即存：持久化写入本地 SQLite tb_inventory 与 tb_module_state 表
+        if self.player_db:
+            try:
+                inv_records = [
+                    InventoryItemRecord(
+                        grid_id=it.grid_id,
+                        item_id=it.item_id,
+                        count=it.count,
+                        item_type=it.item_type,
+                        props={"name": it.name, "type_desc": it.type_desc},
+                    )
+                    for it in items_dto
+                ]
+                self.player_db.upsert_inventory_items(inv_records)
+
+                rec = ModuleStateRecord(
+                    module_id=2,
+                    state_key="pack_summary",
+                    payload=dto.to_dict(),
+                )
+                self.player_db.set_module_state(rec)
+                logger.debug("背包物品快照已成功持久化至本地 SQLite (items_count=%d)", len(items_dto))
+            except Exception as e:
+                logger.warning("本地 SQLite 背包快照写入失败 (非致命): %s", e)
+
+        return dto
+
 
