@@ -7,13 +7,14 @@
 """
 
 import logging
-from typing import Optional
+from typing import Optional, List
 from core.context import GameContext
 from network.client import SXDClient
 from protocol.builder import PacketBuilder
 from protocol.messages.player import PlayerInfoResp
-from services.query_models import PlayerAssetDTO
-from storage.player_db import PlayerDatabase, PlayerProfileRecord
+from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
+from services.query_models import PlayerAssetDTO, RoleDTO
+from storage.player_db import PlayerDatabase, PlayerProfileRecord, ModuleStateRecord
 
 logger = logging.getLogger(__name__)
 
@@ -108,3 +109,70 @@ class QueryService:
                 logger.warning("本地 SQLite 资产快照写入失败 (非致命): %s", e)
 
         return dto
+
+    async def query_roles(self, timeout_sec: float = 3.0) -> List[RoleDTO]:
+        """查询参战伙伴与阵容列表 (Mod 5, Act 2: get_role_list)
+
+        发起只读状态请求，提取上阵与主力伙伴详细信息，并同步持久化至本地 SQLite 快照。
+
+        @author Ateng
+        @since 2026-10-16
+
+        Args:
+            timeout_sec: 网络请求等待超时秒数。
+
+        Returns:
+            参战伙伴 DTO 列表。
+        """
+        logger.info("正在查询参战伙伴与阵型数据 (Mod 5, Act 2: get_role_list)...")
+        roles_dto: List[RoleDTO] = []
+
+        try:
+            req_pkt = RoleGetRoleListReq(player_id=self.context.player.player_id)
+            resp_bytes = await self.client.request(req_pkt, timeout_sec=timeout_sec)
+            if resp_bytes:
+                resp = RoleGetRoleListResp.decode(resp_bytes)
+                for r in resp.roles:
+                    roles_dto.append(
+                        RoleDTO(
+                            role_id=r.role_id,
+                            player_role_id=r.player_role_id,
+                            name=r.name,
+                            level=r.level,
+                            is_deployed=r.is_deployed,
+                            health=r.health,
+                            max_health=r.max_health,
+                            role_job=r.role_job,
+                            realm_level=r.realm_level,
+                            raw_props=r.raw_props,
+                        )
+                    )
+        except Exception as exc:
+            logger.warning("发包拉取 Mod 5 Act 2 伙伴列表异常: %s", exc)
+
+        # 若未成功获取任何伙伴且主角在上下文中，回退添加主角自身保底
+        if not roles_dto and self.context.player.player_id > 0:
+            roles_dto.append(
+                RoleDTO(
+                    role_id=1,
+                    player_role_id=self.context.player.player_id,
+                    name=self.context.player.nickname or "主角",
+                    level=self.context.player.level,
+                    is_deployed=True,
+                )
+            )
+
+        # 即查即存：持久化写入本地 SQLite tb_module_state 表 (module_id=5, state_key="role_list")
+        if self.player_db:
+            try:
+                rec = ModuleStateRecord(
+                    module_id=5,
+                    state_key="role_list",
+                    payload={"roles": [r.to_dict() for r in roles_dto]},
+                )
+                self.player_db.set_module_state(rec)
+                logger.debug("伙伴列表快照已成功持久化至本地 SQLite (roles_count=%d)", len(roles_dto))
+            except Exception as e:
+                logger.warning("本地 SQLite 伙伴快照写入失败 (非致命): %s", e)
+
+        return roles_dto

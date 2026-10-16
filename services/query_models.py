@@ -54,3 +54,37 @@ class PlayerAssetDTO:
             "mission_key": self.mission_key,
             "updated_at": self.updated_at,
         }
+
+
+@dataclass
+class RoleDTO:
+    """参战伙伴数据传输模型
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    role_id: int = 0
+    player_role_id: int = 0
+    name: str = ""
+    level: int = 1
+    is_deployed: bool = True
+    health: int = 0
+    max_health: int = 0
+    role_job: str = ""
+    realm_level: int = 0
+    raw_props: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准字典"""
+        return {
+            "role_id": self.role_id,
+            "player_role_id": self.player_role_id,
+            "name": self.name,
+            "level": self.level,
+            "is_deployed": self.is_deployed,
+            "health": self.health,
+            "max_health": self.max_health,
+            "role_job": self.role_job,
+            "realm_level": self.realm_level,
+        }

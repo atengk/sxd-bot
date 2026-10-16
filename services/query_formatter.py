@@ -7,8 +7,8 @@
 """
 
 import json
-from typing import Any, Dict
-from services.query_models import PlayerAssetDTO
+from typing import Any, Dict, List
+from services.query_models import PlayerAssetDTO, RoleDTO
 
 
 class QueryFormatter:
@@ -46,5 +46,39 @@ class QueryFormatter:
             "status": "success",
             "type": "assets",
             "data": dto.to_dict(),
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def format_roles_table(roles: List[RoleDTO]) -> str:
+        """格式化参战伙伴阵容看板表格"""
+        lines = [
+            "=" * 72,
+            "              神仙道参战伙伴阵容看板 (Battle Roles)",
+            "=" * 72,
+            f" {'ID':<4} | {'伙伴名称':<12} | {'等级':<6} | {'参战状态':<10} | {'生命值 / 上限':<20}",
+            "-" * 72,
+        ]
+        if not roles:
+            lines.append("  (暂无出战伙伴数据)")
+        else:
+            for r in roles:
+                deploy_str = "主力出战" if r.is_deployed else "备战待命"
+                hp_str = f"{r.health:,} / {r.max_health:,}" if r.max_health > 0 else "-"
+                lines.append(
+                    f" {r.role_id:<4} | {r.name:<12} | Lv.{r.level:<3} | {deploy_str:<10} | {hp_str:<20}"
+                )
+        lines.append("=" * 72)
+        lines.append(f"  阵容统计 : 共有 {len(roles)} 位伙伴出战/待命")
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_roles_json(roles: List[RoleDTO]) -> str:
+        """导出伙伴阵容为标准 JSON 字符串"""
+        payload = {
+            "status": "success",
+            "type": "roles",
+            "total": len(roles),
+            "data": [r.to_dict() for r in roles],
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)

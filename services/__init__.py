@@ -6,8 +6,8 @@
 @since 2026-10-16
 """
 
-from services.query_models import PlayerAssetDTO
+from services.query_models import PlayerAssetDTO, RoleDTO
 from services.query_formatter import QueryFormatter
 from services.query_service import QueryService
 
-__all__ = ["PlayerAssetDTO", "QueryFormatter", "QueryService"]
+__all__ = ["PlayerAssetDTO", "RoleDTO", "QueryFormatter", "QueryService"]

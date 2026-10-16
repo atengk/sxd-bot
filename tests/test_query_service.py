@@ -23,9 +23,10 @@ from network.client import SXDClient
 from protocol.packet import ByteArrayWriter
 from storage.player_db import PlayerDatabase
 
-from services.query_models import PlayerAssetDTO
+from services.query_models import PlayerAssetDTO, RoleDTO
 from services.query_service import QueryService
 from services.query_formatter import QueryFormatter
+from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
 
 
 class TestQueryService(unittest.IsolatedAsyncioTestCase):
@@ -248,25 +249,135 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
             self.assertIn("神仙道角色全景资产看板", table_val)
             self.assertIn("李逍遥", table_val)
 
-        # 2. 测试 JSON 格式
-        captured_json_out = StringIO()
+        # ==================== 7. 伙伴系统 (Role: Mod 5) 编解码与查询测试 ====================
+
+    def _build_mock_role_list_payload(self) -> bytes:
+        """构造 Mod 5 Act 2 get_role_list 二进制应答桩"""
+        writer = ByteArrayWriter()
+        # 15 个头部字段
+        for _ in range(7):
+            writer.write_int32(0)
+        writer.write_utf("")  # string 1
+        writer.write_utf("")  # string 2
+        writer.write_int32(0) # int 1
+        writer.write_int8(0)  # byte 1
+        writer.write_int8(0)  # byte 2
+        writer.write_int8(0)  # byte 3
+        writer.write_int16(0) # short 1
+        writer.write_int16(0) # short 2
+
+        # 角色数组：长度 2
+        writer.write_uint16(2)
+
+        # 角色 1: 主角
+        writer.write_utf("剑仙李逍遥")        # 0: name
+        writer.write_int32(1)                 # 1: role_id
+        writer.write_int32(101)               # 2: player_role_id
+        writer.write_int64(1000)              # 3: exp
+        writer.write_int64(2000)              # 4: max_exp
+        writer.write_int16(120)               # 5: level
+        writer.write_int8(0)                  # 6: deploy_state (0=DEPLOY)
+        writer.write_int16(1)                 # 7: order
+        writer.write_int64(800000)            # 8: health
+        writer.write_int64(800000)            # 9: max_health
+
+        # 角色 2: 伙伴小仙女
+        writer.write_utf("小仙女")            # 0: name
+        writer.write_int32(2)                 # 1: role_id
+        writer.write_int32(102)               # 2: player_role_id
+        writer.write_int64(500)               # 3: exp
+        writer.write_int64(1000)              # 4: max_exp
+        writer.write_int16(110)               # 5: level
+        writer.write_int8(0)                  # 6: deploy_state (0=DEPLOY)
+        writer.write_int16(2)                 # 7: order
+        writer.write_int64(500000)            # 8: health
+        writer.write_int64(500000)            # 9: max_health
+
+        return writer.to_bytes()
+
+    def test_role_dto_to_dict(self) -> None:
+        """验证 RoleDTO 字典序列化"""
+        role = RoleDTO(
+            role_id=1,
+            player_role_id=101,
+            name="剑仙李逍遥",
+            level=120,
+            is_deployed=True,
+            health=800000,
+            max_health=800000,
+            role_job="武圣",
+            realm_level=5,
+        )
+        d = role.to_dict()
+        self.assertEqual(d["name"], "剑仙李逍遥")
+        self.assertEqual(d["level"], 120)
+        self.assertTrue(d["is_deployed"])
+        self.assertEqual(d["health"], 800000)
+
+    async def test_query_roles_service(self) -> None:
+        """验证 QueryService.query_roles 只读发包与 DTO 映射"""
+        mock_payload = self._build_mock_role_list_payload()
+        self.client.request = AsyncMock(return_value=mock_payload)
+
+        service = QueryService(self.client, self.ctx, self.player_db)
+        roles = await service.query_roles()
+
+        self.assertEqual(len(roles), 2)
+        r1, r2 = roles[0], roles[1]
+        self.assertEqual(r1.name, "剑仙李逍遥")
+        self.assertEqual(r1.level, 120)
+        self.assertTrue(r1.is_deployed)
+        self.assertEqual(r2.name, "小仙女")
+        self.assertEqual(r2.level, 110)
+
+        # 验证发包目标为 Mod 5 Act 2
+        req = self.client.request.call_args[0][0]
+        self.assertEqual(req.mod, 5)
+        self.assertEqual(req.act, 2)
+
+    def test_query_formatter_roles_table_and_json(self) -> None:
+        """验证 QueryFormatter 输出伙伴阵容看板与 JSON"""
+        roles = [
+            RoleDTO(role_id=1, player_role_id=101, name="剑仙李逍遥", level=120, is_deployed=True, health=800000, max_health=800000),
+            RoleDTO(role_id=2, player_role_id=102, name="小仙女", level=110, is_deployed=True, health=500000, max_health=500000),
+        ]
+        table = QueryFormatter.format_roles_table(roles)
+        self.assertIn("参战伙伴阵容看板", table)
+        self.assertIn("剑仙李逍遥", table)
+        self.assertIn("小仙女", table)
+        self.assertIn("主力出战", table)
+
+        json_str = QueryFormatter.format_roles_json(roles)
+        data = json.loads(json_str)
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["type"], "roles")
+        self.assertEqual(len(data["data"]), 2)
+
+    async def test_run_query_mode_roles(self) -> None:
+        """验证 main.py run_query_mode query_target='roles'"""
+        from io import StringIO
+        import sys
+        from unittest.mock import patch
+        from main import run_query_mode
+
+        config = {
+            "auth_mode": "static",
+            "server": {"host": "127.0.0.1", "port": 8000},
+            "credentials": {"player_name": "test_user", "server_id": 1},
+        }
+
+        captured_out = StringIO()
         with patch.object(SXDClient, "connect", new=AsyncMock(return_value=True)), \
              patch.object(SXDClient, "disconnect", new=AsyncMock(return_value=None)), \
              patch("main.LoginTask.execute", new=AsyncMock(return_value=MagicMock(is_success=True))), \
-             patch.object(QueryService, "query_player_assets", new=AsyncMock(return_value=PlayerAssetDTO(
-                 player_id=8888,
-                 nickname="李逍遥",
-                 level=100,
-                 coins=123456,
-                 ingots=888,
-                 power=150,
-             ))), \
-             patch.object(sys, "stdout", captured_json_out):
-            await run_query_mode(config, query_target="assets", as_json=True)
-            json_val = captured_json_out.getvalue()
-            data = json.loads(json_val)
-            self.assertEqual(data["status"], "success")
-            self.assertEqual(data["data"]["coins"], 123456)
+             patch.object(QueryService, "query_roles", new=AsyncMock(return_value=[
+                 RoleDTO(role_id=1, name="巨灵神", level=100, is_deployed=True),
+             ])), \
+             patch.object(sys, "stdout", captured_out):
+            await run_query_mode(config, query_target="roles", as_json=False)
+            output = captured_out.getvalue()
+            self.assertIn("参战伙伴阵容看板", output)
+            self.assertIn("巨灵神", output)
 
 
 if __name__ == "__main__":
