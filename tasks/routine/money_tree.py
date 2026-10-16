@@ -1,4 +1,4 @@
-"""神仙道招财神符/摇钱树免费福利自动化任务 (Mod 76)
+"""神仙道招财神符/摇钱树免费福利自动化任务 (Mod 13: Mod_Farm_Base)
 
 自动查询每日免费招财次数，只消耗免费次数领取铜钱，严禁消耗非绑定元宝（零元宝防御红线）。
 
@@ -30,23 +30,22 @@ class FreeMoneyTreeTask(BaseTask):
         logger.info("开始执行招财神符免费次数巡检...")
 
         try:
-            # 1. 查询招财神符状态 (Mod 76, Act 0)
-            req_76 = PacketBuilder(mod=76, act=0).build()
-            resp_bytes = await client.request(req_76, timeout_sec=5.0)
+            # 1. 查询招财神符/摇钱树状态 (Mod 13, Act 12: buy_coin_tree_count_info)
+            req_info = PacketBuilder(mod=13, act=12).build()
+            resp_bytes = await client.request(req_info, timeout_sec=5.0)
 
             reader = ByteArrayReader(resp_bytes)
-            # 解析招财神符状态
-            # 通常首字节为免费剩余次数 (free_times)
-            if reader.remaining >= 1:
-                free_times = reader.read_uint8()
-                ingot_cost = reader.read_uint16() if reader.remaining >= 2 else 999
+            # 解析招财神符状态 (IntUtil, IntUtil, IntUtil, IntUtil)
+            if reader.remaining >= 8:
+                free_times = reader.read_int32()
+                ingot_cost = reader.read_int32()
 
                 logger.info("招财神符状态: 免费剩余次数=%d, 下次所需元宝=%d", free_times, ingot_cost)
 
                 # 2. 严格零元宝安全红线防御
                 if free_times > 0 and ingot_cost == 0:
                     logger.info("检测到存在免费招财次数，正在执行免费招财...")
-                    claim_req = PacketBuilder(mod=76, act=1).build()
+                    claim_req = PacketBuilder(mod=13, act=13).build()
                     await client.send_packet(claim_req)
                     return TaskResult.success(f"成功领取免费招财，剩余免费次数: {free_times - 1}")
                 else:

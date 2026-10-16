@@ -195,7 +195,7 @@ class TestSprint2Routine(unittest.IsolatedAsyncioTestCase):
     # ==================== 3. 齐天大圣偷桃 (Mod 40) 测试 ====================
 
     async def test_peach_and_pet_batch_harvest(self) -> None:
-        """测试齐天大圣一键批量偷桃与神龙培养"""
+        """测试齐天大圣一键批量偷桃与神龙培养 (Mod 40, Mod 48: PetAnimal)"""
         task = PeachAndPetTask()
 
         async def mock_request(packet, timeout_sec=2.5):
@@ -208,8 +208,8 @@ class TestSprint2Routine(unittest.IsolatedAsyncioTestCase):
                 return bytes([0]) + (0).to_bytes(4, "big") + (10000000).to_bytes(4, "big")
             if packet.mod == 40 and packet.act == 6:
                 return bytes([0])
-            if packet.mod == 100 and packet.act == 29:
-                return bytes([1])  # 神龙喂养成功
+            if packet.mod == 48 and packet.act == 2:
+                return bytes([0])  # 神龙喂养成功 (Mod 48 Act 2 SUCCESS=0)
             return b""
 
         self.client.request = AsyncMock(side_effect=mock_request)
@@ -220,11 +220,11 @@ class TestSprint2Routine(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["exp"], 10000000)
         self.assertTrue(result.data["pet_fed"])
 
-    # ==================== 4. 喜从天降与通商 (Mod 41) 测试 ====================
+    # ==================== 4. 喜从天降与通商 (Mod 757: Traders) 测试 ====================
 
     async def test_traders_panel_and_trend_sync(self) -> None:
-        """测试喜从天降/通商主面板数据与行情趋势同步"""
-        task = TradersTask()
+        """测试喜从天降/通商主面板数据与行情趋势同步 (Mod 757: Traders)"""
+        task = TradersTask(force_check=True)
 
         # 模拟 239 字节主面板数据
         raw_panel = bytearray(239)
@@ -233,13 +233,13 @@ class TestSprint2Routine(unittest.IsolatedAsyncioTestCase):
         raw_panel[8:12] = (64000).to_bytes(4, "big")  # max_tokens = 64000
 
         async def mock_request(packet, timeout_sec=2.5):
-            if packet.mod == 41 and packet.act == 0:
+            if packet.mod == 757 and packet.act == 1:
                 return bytes(raw_panel)
-            if packet.mod == 41 and packet.act == 2:
+            if packet.mod == 757 and packet.act == 2:
                 return (22722).to_bytes(4, "big") + (100).to_bytes(4, "big")
-            if packet.mod == 41 and packet.act == 4:
+            if packet.mod == 757 and packet.act == 5:
                 return (1).to_bytes(4, "big")
-            if packet.mod == 41 and packet.act == 5:
+            if packet.mod == 757 and packet.act == 6:
                 return bytes(8)
             return b""
 

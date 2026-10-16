@@ -1,4 +1,4 @@
-"""神仙道帮派祭神与神像上香自动化任务 (Mod 21)
+"""神仙道帮派祭神与神像上香自动化任务 (Mod 41: Mod_WorshipMars_Base)
 
 自动执行每日帮派神像祭神 (白檀香上香，严格零元宝消耗) 并获取帮派祝福与声望。
 
@@ -37,9 +37,9 @@ class FactionWorshipTask(BaseTask):
         if not ctx.is_connected:
             return TaskResult.skipped("未处于连接状态，跳过帮派祭神任务")
 
-        # 1. 查询帮派神像状态 (Mod 21, Act 0: mars_info)
+        # 1. 查询帮派神像状态 (Mod 41, Act 0: mars_info)
         try:
-            req_mars = PacketBuilder(mod=21, act=0).build()
+            req_mars = PacketBuilder(mod=41, act=0).build()
             resp_mars = await client.request(req_mars, timeout_sec=3.0)
             reader = ByteArrayReader(resp_mars)
 
@@ -61,9 +61,9 @@ class FactionWorshipTask(BaseTask):
                 logger.info(msg)
                 return TaskResult.skipped(msg, data={"god_level": god_level, "free_times": free_times, "incense_type": 0})
 
-            # 3. 执行白檀香上香 (Mod 21, Act 1: incense)
+            # 3. 执行白檀香上香 (Mod 41, Act 1: incense)
             logger.info("检测到今日剩余免费祭神次数 > 0，执行白檀香上香 (严格硬编码为 1, 零元宝)...")
-            incense_pkt = PacketBuilder(mod=21, act=1).write_uint8(INCENSE_SANDALWOOD).build()
+            incense_pkt = PacketBuilder(mod=41, act=1).write_int32(INCENSE_SANDALWOOD).build()
             incense_resp = await client.request(incense_pkt, timeout_sec=3.0)
 
             msg = f"帮派神像白檀香上香成功！(响应载荷 {len(incense_resp)} 字节)"

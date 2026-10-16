@@ -32,31 +32,30 @@ class OnlineGiftTask(BaseTask):
         if not ctx.is_connected:
             return TaskResult.skipped("未处于连接状态，跳过在线礼包与俸禄领取")
 
-        # 1. 领取微端专享每日礼包 (Mod 0, Act 39: receive_client_gift)
+        # 1. 领取微端专享每日礼包 (Mod 0, Act 56: receive_client_gift)
         try:
-            logger.info("发送微端专享每日礼包领取指令 (Mod 0, Act 39)...")
-            pkt_client_gift = PacketBuilder(mod=0, act=39).write_int32(0).build()
+            logger.info("发送微端专享每日礼包领取指令 (Mod 0, Act 56)...")
+            pkt_client_gift = PacketBuilder(mod=0, act=56).build()
             await client.send_packet(pkt_client_gift)
             claimed += 1
             logger.info("微端专享每日礼包指令已成功发送")
         except Exception as exc:
             logger.warning("微端专享礼包领取异常: %s", exc)
 
-        # 2. 领取在线时长累积礼包 (Mod 0, Act 46: player_get_online_gift)
+        # 2. 领取在线时长累积礼包 (Mod 0, Act 30: player_get_online_gift)
         try:
-            logger.info("发送在线时长累积礼包领取指令 (Mod 0, Act 46)...")
-            pkt_online_gift = PacketBuilder(mod=0, act=46).write_int32(0).build()
+            logger.info("发送在线时长累积礼包领取指令 (Mod 0, Act 30)...")
+            pkt_online_gift = PacketBuilder(mod=0, act=30).build()
             await client.send_packet(pkt_online_gift)
             claimed += 1
             logger.info("在线时长累积礼包指令已成功发送")
         except Exception as exc:
             logger.warning("在线时长礼包领取异常: %s", exc)
 
-        # 3. 领取阵营/帮派每日俸禄 (Mod 0, Act 22: get_player_camp_salary)
+        # 3. 领取阵营/帮派每日俸禄 (Mod 0, Act 20: get_player_camp_salary)
         try:
-            logger.info("发送阵营/帮派每日俸禄领取指令 (Mod 0, Act 22)...")
-            # 经 Stream 18 真实抓包印证：微端发送 4 字节标识 00010000
-            pkt_salary = PacketBuilder(mod=0, act=22).write_bytes(bytes.fromhex("00010000")).build()
+            logger.info("发送阵营/帮派每日俸禄领取指令 (Mod 0, Act 20)...")
+            pkt_salary = PacketBuilder(mod=0, act=20).build()
             await client.send_packet(pkt_salary)
             claimed += 1
             logger.info("阵营/帮派每日俸禄领取指令已成功发送")

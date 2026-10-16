@@ -75,6 +75,8 @@ class TaskScheduler:
                 logger.warning("连接状态异常，中止后续单次任务调度: %s", task.name)
                 break
             await self._run_single_task(task)
+            # 任务间防频控节奏缓冲 (300ms)，拟真交互并防止突发流量触发服务端防刷断连
+            await asyncio.sleep(0.3)
 
     async def stop(self) -> None:
         """停止所有任务调度协程"""

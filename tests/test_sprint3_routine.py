@@ -100,7 +100,7 @@ class TestSprint3Routine(unittest.IsolatedAsyncioTestCase):
         # 5. Mod 10 Act 28: 加入封魔回执
         resp_join = bytes([0])
 
-        # 6. Mod 0 Act 22: 阵营俸禄回执
+        # 6. Mod 0 Act 20: 阵营俸禄回执
         resp_salary = bytes([0])
 
         self.client.request = AsyncMock(side_effect=[
@@ -139,7 +139,7 @@ class TestSprint3Routine(unittest.IsolatedAsyncioTestCase):
         # 1. Mod 32 Act 0: 轮回塔面板 (13 字节实测数据: 190c19140600000d0000352c0c)
         resp_tower = bytes.fromhex("190c19140600000d0000352c0c")
 
-        # 2. Mod 100 Act 21: 封灵石状态 (8 字节实测数据: 0036003600140018)
+        # 2. Mod 100 Act 19: 封灵石状态 (8 字节实测数据: 0036003600140018)
         resp_stone = bytes.fromhex("0036003600140018")
 
         self.client.request = AsyncMock(side_effect=[resp_tower, resp_stone])

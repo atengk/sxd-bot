@@ -147,39 +147,41 @@ class TestCombatModules(unittest.TestCase):
 
     def test_world_boss_routine_free_and_ingot_guardrails(self) -> None:
         """测试 Mod 24 世界 Boss 阅历免费鼓舞与元宝鼓舞安全熔断"""
-        # 安全查询
-        data_req = WorldBossGetDataReq(boss_id=1)
+        # 安全查询 (Mod 24 Act 1: get_world_boss_data)
+        data_req = WorldBossGetDataReq()
         self.assertEqual(data_req.mod, 24)
         self.assertEqual(data_req.act, 1)
         decoded_data = WorldBossGetDataReq.decode(data_req.encode_payload())
-        self.assertEqual(decoded_data.boss_id, 1)
+        self.assertEqual(decoded_data.mod, 24)
+        self.assertEqual(decoded_data.act, 1)
 
-        # 发起进攻
-        fight_req = WorldBossFightReq(boss_id=1)
+        # 发起进攻 (Mod 24 Act 2: fight_world_boss)
+        fight_req = WorldBossFightReq(boss_type=1)
         self.assertEqual(fight_req.mod, 24)
         self.assertEqual(fight_req.act, 2)
         decoded_fight = WorldBossFightReq.decode(fight_req.encode_payload())
-        self.assertEqual(decoded_fight.boss_id, 1)
+        self.assertEqual(decoded_fight.boss_type, 1)
 
-        # 阅历免费鼓舞
-        free_inspire = WorldBossInspireReq(boss_id=1)
+        # 阅历免费鼓舞 (Mod 24 Act 7: strengthen_combat)
+        free_inspire = WorldBossInspireReq(inspire_type=1)
         self.assertEqual(free_inspire.mod, 24)
-        self.assertEqual(free_inspire.act, 4)
+        self.assertEqual(free_inspire.act, 7)
         decoded_free = WorldBossInspireReq.decode(free_inspire.encode_payload())
-        self.assertEqual(decoded_free.boss_id, 1)
+        self.assertEqual(decoded_free.inspire_type, 1)
 
-        # 元宝鼓舞熔断拦截
+        # 元宝鼓舞熔断拦截 (Mod 24 Act 7: strengthen_combat, type=2)
         with self.assertRaises(PermissionError) as ctx:
-            WorldBossIngotInspireReq(boss_id=1)
+            WorldBossIngotInspireReq(inspire_type=2)
         self.assertIn("[HAZARDOUS_INGOT]", str(ctx.exception))
         self.assertIn("ingot_inspire", str(ctx.exception))
 
         # 显式授权元宝鼓舞
-        allowed_inspire = WorldBossIngotInspireReq(boss_id=1, allow_ingot=True)
-        self.assertEqual(allowed_inspire.boss_id, 1)
+        allowed_inspire = WorldBossIngotInspireReq(inspire_type=2, allow_ingot=True)
+        self.assertEqual(allowed_inspire.inspire_type, 2)
+        self.assertEqual(allowed_inspire.act, 7)
         self.assertTrue(allowed_inspire.allow_ingot)
         decoded_ingot = WorldBossIngotInspireReq.decode(allowed_inspire.encode_payload())
-        self.assertEqual(decoded_ingot.boss_id, 1)
+        self.assertEqual(decoded_ingot.inspire_type, 2)
         self.assertTrue(decoded_ingot.allow_ingot)
 
 

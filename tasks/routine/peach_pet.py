@@ -91,13 +91,15 @@ class PeachAndPetTask(BaseTask):
         except Exception:
             pass
 
-        # 5. 每日帮派神龙培养与喂养 (Mod 100, Act 29: feed_pet_animal，严格免费/零元宝)
+        # 5. 每日帮派神龙培养与喂养 (Mod 48, Act 2: feed_pet_animal，严格免费/铜钱档位 feed_type=0，零元宝)
         try:
-            req_pet = PacketBuilder(mod=100, act=29).build()
+            req_pet = PacketBuilder(mod=48, act=2).write_uint8(0).build()
             resp_pet = await client.request(req_pet, timeout_sec=1.5)
-            if len(resp_pet) > 0:
+            if len(resp_pet) > 0 and resp_pet[0] == 0:
                 pet_fed = True
                 logger.info("神龙日常培养拜祭成功！帮派活跃度与声望已提升 (零元宝)")
+            elif len(resp_pet) > 0:
+                logger.info("神龙日常培养响应状态码: %d", resp_pet[0])
         except Exception as exc:
             logger.debug("神龙今日已完成培养或无需重复喂养: %s", exc)
 

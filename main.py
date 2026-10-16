@@ -52,6 +52,13 @@ from tasks.routine.item_clean import ItemCleanTask
 from tasks.routine.traders import TradersTask
 from tasks.routine.fishing import FishingTask
 from tasks.battle.tower import TowerTask
+from tasks.routine.email import EmailTask
+from tasks.routine.ask_fairy import AskFairyTask
+from tasks.routine.touch_stone import GoldenTouchStoneTask
+from tasks.routine.weekend import WeekendRevelryTask
+from tasks.routine.assistant import AssistantTask
+from tasks.routine.practice import PracticeTask
+
 
 # 配置标准受管日志
 logging.basicConfig(
@@ -159,6 +166,16 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         "boss": WorldBossTask(),
         "world_boss": WorldBossTask(),
         "online_gift": OnlineGiftTask(),
+        "email": EmailTask(),
+        "mail": EmailTask(),
+        "ask_fairy": AskFairyTask(),
+        "fairy": AskFairyTask(),
+        "wen_ling": AskFairyTask(),
+        "touch_stone": GoldenTouchStoneTask(),
+        "stone": GoldenTouchStoneTask(),
+        "weekend": WeekendRevelryTask(),
+        "assistant": AssistantTask(),
+        "practice": PracticeTask(),
     }
 
     if specific_task and specific_task != "all":
@@ -168,14 +185,19 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         else:
             logger.warning("未识别的任务指令: %s，支持项: %s", specific_task, list(task_map.keys()))
     else:
-        # 默认依序注册全功能日常与战斗流水线 (共 20 大自动化引擎)
+        # 默认依序注册全功能日常与战斗流水线 (共 27 大自动化引擎)
+        scheduler.register(AssistantTask(is_post_routine=False))  # 前置：小助手状态感知
         scheduler.register(DailySignInTask())
+        scheduler.register(EmailTask())                           # 邮件附件与更新补偿一键提取
         scheduler.register(FreeMoneyTreeTask())
         scheduler.register(FactionWorshipTask())
         scheduler.register(FactionRollCakeTask())
         scheduler.register(LuckyStarTask())
         scheduler.register(FarmTask())
         scheduler.register(PeachAndPetTask())
+        scheduler.register(AskFairyTask())                        # 仙道问灵每日免费求签
+        scheduler.register(GoldenTouchStoneTask())                # 点金石免费点石与助友
+        scheduler.register(WeekendRevelryTask())                  # 周末狂欢礼包与委托减负
         scheduler.register(TradersTask())
         scheduler.register(FishingTask())
         scheduler.register(TowerTask())
@@ -189,6 +211,9 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         scheduler.register(SuperSportTask())
         scheduler.register(WorldBossTask())
         scheduler.register(OnlineGiftTask())
+        scheduler.register(AssistantTask(is_post_routine=True))   # 后置：活跃度达峰一键收割宝箱
+        scheduler.register(PracticeTask())                        # 收官：角色激活城镇挂机打坐
+
 
     # 注册心跳保活任务
     auto_conf = config.get("automation", {})
@@ -240,7 +265,14 @@ def print_execution_summary(ctx: GameContext, scheduler: TaskScheduler) -> None:
     print("    [+] 西天取经与阵营俸禄 : 阵营俸禄已领取，使者护送启程")
     print("    [+] 仙履奇缘智能答题   : 题库最优选项匹配结算 (体力/声望优先)")
     print("    [+] 背包智能规整与变卖 : 背包分类规整与低级杂物变现完成")
+    print("    [+] 系统邮件与更新补偿 : 停机维护与版本大礼包一键收取完成")
+    print("    [+] 仙道问灵 (AskFairy): 每日免费问灵求签完成 (签文资产入账)")
+    print("    [+] 点金石点石成金     : 每日免费点金与好友求助互惠完成")
+    print("    [+] 周末狂欢福利       : 周末专属大礼包领取与委托减负激活")
+    print("    [+] 小助手活跃度宝箱   : 每日活跃度阶段宝箱一键全额收割")
+    print("    [+] 角色城镇挂机打坐   : 城镇练功打坐状态已激活，持续累积经验")
     print("-" * 62)
+
     print("  副本与战斗自动化板块:")
     print("    [+] 每日精英副本扫荡   : 已触发挂机扫荡与快速秒完成结算")
     print("    [+] 普通副本极速扫荡   : 剩余体力已安全极速扫荡清空 (零元宝)")

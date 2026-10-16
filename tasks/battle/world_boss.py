@@ -77,9 +77,9 @@ class WorldBossTask(BaseTask):
         inspires_done = 0
 
         try:
-            # 2. 免费阅历鼓舞战力 (Mod 24, Act 15: strengthen_combat, 严格阅历/零元宝)
+            # 2. 免费阅历鼓舞战力 (Mod 24, Act 7: strengthen_combat, 严格阅历/零元宝)
             try:
-                req_inspire = PacketBuilder(mod=24, act=15).build()
+                req_inspire = PacketBuilder(mod=24, act=7).write_uint8(1).build()
                 resp_inspire = await client.request(req_inspire, timeout_sec=2.0)
                 if len(resp_inspire) >= 2:
                     inspires_done += 1
@@ -87,18 +87,18 @@ class WorldBossTask(BaseTask):
             except Exception as exc:
                 logger.debug("阅历鼓舞暂未开放或已达上限: %s", exc)
 
-            # 3. 发起战斗挑战 Boss (Mod 24, Act 14: fight_world_boss)
+            # 3. 发起战斗挑战 Boss (Mod 24, Act 2: fight_world_boss)
             try:
-                req_fight = PacketBuilder(mod=24, act=14).build()
+                req_fight = PacketBuilder(mod=24, act=2).write_uint8(1).build()
                 resp_fight = await client.request(req_fight, timeout_sec=3.0)
                 if len(resp_fight) >= 2:
                     fights_done += 1
                     logger.info("世界 Boss 参战攻击成功！获得巨额声望与伤害贡献 (报文长度: %d 字节)", len(resp_fight))
 
-                    # 4. 阵亡免费复活 (Mod 24, Act 13: super_reborn, 免费/等待CD)
+                    # 4. 阵亡免费复活 (Mod 24, Act 3: clear_death_cd, 免费/等待CD)
                     await asyncio.sleep(0.5)
                     try:
-                        req_reborn = PacketBuilder(mod=24, act=13).build()
+                        req_reborn = PacketBuilder(mod=24, act=3).build()
                         await client.request(req_reborn, timeout_sec=1.5)
                         logger.info("世界 Boss 免费重生复活成功")
                     except Exception:

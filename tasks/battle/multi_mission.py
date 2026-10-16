@@ -63,18 +63,18 @@ class MultiMissionTask(BaseTask):
             except Exception:
                 logger.debug("多人副本状态暂无即时应答，直接尝试检索队伍")
 
-            # 3. 检索当前招募队伍并尝试加入 (Mod 14, Act 5: join)
+            # 3. 检索当前招募队伍并尝试加入 (Mod 14, Act 20: random_join)
             try:
-                req_join = PacketBuilder(mod=14, act=5).build()
+                req_join = PacketBuilder(mod=14, act=20).build()
                 await client.send_packet(req_join)
                 joined_or_created = True
-                logger.info("已提交多人副本快速加入队伍指令")
+                logger.info("已提交多人副本快速随机加入队伍指令 (Mod 14, Act 20)")
             except Exception:
-                # 4. 若无现成队伍，自动创建房间 (Mod 14, Act 3: create)
-                req_create = PacketBuilder(mod=14, act=3).build()
+                # 4. 若无现成队伍，自动创建房间 (Mod 14, Act 3: create_multiple_mission_team, 参数: mission_id=1, type=0)
+                req_create = PacketBuilder(mod=14, act=3).write_int32(1).write_uint8(0).build()
                 await client.send_packet(req_create)
                 joined_or_created = True
-                logger.info("已自动创建多人副本房间并召集队伍挑战")
+                logger.info("已自动创建多人副本房间并召集队伍挑战 (Mod 14, Act 3)")
 
             if joined_or_created:
                 msg = "多人副本巡检完成，已完成组队/进入副本流水线"

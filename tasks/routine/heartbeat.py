@@ -1,6 +1,6 @@
 """神仙道心跳保活循环自动化任务
 
-定期向服务端发送 Mod 184 Act 4 心跳帧，维持 TCP Socket 长连接活性，防止超时断线。
+定期向服务端发送 Mod 0 Act 75 (Player.heart) 心跳帧，维持 TCP Socket 长连接活性，防止超时断线。
 
 @author Ateng
 @since 2026-10-15

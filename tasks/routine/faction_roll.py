@@ -93,9 +93,9 @@ class FactionRollCakeTask(BaseTask):
         except Exception as exc:
             logger.info("帮派七星封魔巡检跳过: %s", exc)
 
-        # 3. 领取每日阵营俸禄 (Mod 0, Act 22: get_player_camp_salary)
+        # 3. 领取每日阵营俸禄 (Mod 0, Act 20: get_player_camp_salary)
         try:
-            req_sal = PacketBuilder(mod=0, act=22).write_bytes(bytes.fromhex("00010000")).build()
+            req_sal = PacketBuilder(mod=0, act=20).build()
             resp_sal = await client.request(req_sal, timeout_sec=3.0)
             salary_claimed = True
             logger.info("每日阵营俸禄结算成功 (响应载荷: %d 字节)", len(resp_sal))

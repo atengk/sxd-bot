@@ -82,9 +82,9 @@ class TowerTask(BaseTask):
         except Exception as exc:
             logger.info("六道轮回塔面板查询跳过: %s", exc)
 
-        # 2. 查询与同步封灵石收益 (Mod 100, Act 21: get_stone)
+        # 2. 查询与同步封灵石收益 (Mod 100, Act 19: get_stone)
         try:
-            req_stone = PacketBuilder(mod=100, act=21).build()
+            req_stone = PacketBuilder(mod=100, act=19).build()
             resp_stone = await client.request(req_stone, timeout_sec=3.0)
             reader_st = ByteArrayReader(resp_stone)
             if reader_st.remaining >= 8:

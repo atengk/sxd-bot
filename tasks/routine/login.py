@@ -64,8 +64,11 @@ class LoginTask(BaseTask):
             # 4. 获取角色基础信息 (Mod 0, Act 2, 官方空载荷)
             pkt_2 = PacketBuilder(mod=0, act=2).build()
             await client.send_packet(pkt_2)
-            # 等待服务端回传 44 项基础属性完成上下文中真实等级/财富/体力同步
-            await asyncio.sleep(0.4)
+            # 等待服务端回传 44 项基础属性完成上下文中真实等级/财富/体力同步 (至多等待 1.5 秒)
+            for _ in range(15):
+                if ctx.player.level > 1:
+                    break
+                await asyncio.sleep(0.1)
 
             return TaskResult.success("登录与角色基础初始化完成")
 

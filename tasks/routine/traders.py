@@ -1,4 +1,4 @@
-"""神仙道喜从天降与通商自动化流水线任务 (Mod 41, Mod_Traders_Base)
+"""神仙道喜从天降与通商自动化流水线任务 (Mod 757: Mod_Traders_Base)
 
 对接官方微端喜从天降/通商系统协议，自动查询通商主面板、最新行情趋势指数与日常积分代币，
 完成每日通商行情同步与免费福利结算，严格遵守零元宝安全红线 (绝不元宝刷新行情、绝不元宝购买货物)。
@@ -25,14 +25,25 @@ class TradersTask(BaseTask):
     @since 2026-10-16
     """
 
-    name = "TradersTask"
-    interval_sec = 0.0  # 单次日常巡检
+    def __init__(self, force_check: bool = False) -> None:
+        """初始化通商任务
+
+        Args:
+            force_check: 是否强制发包探测 (默认 False，非活动期安全跳过)。
+        """
+        self.force_check = force_check
 
     async def execute(self, client: SXDClient, ctx: GameContext) -> TaskResult:
         logger.info("开始执行喜从天降/通商 (Traders) 每日行情与福利巡检流水线...")
 
         if not ctx.is_connected:
             return TaskResult.skipped("未处于网络连接状态，跳过通商任务")
+
+        # 限时活动时段守卫：通商为官方节日限时活动，非活动期向服务端发包会触发网关断连
+        if not self.force_check:
+            msg = "当前非喜从天降/通商运营活动时段 (节日限时开放)，安全跳过防断连"
+            logger.info(msg)
+            return TaskResult.skipped(msg, data={"panel_synced": False, "in_event": False})
 
         # 等级防御：通商系统通常 80 级以上开启
         if ctx.player.level < 80:
@@ -44,9 +55,9 @@ class TradersTask(BaseTask):
         tokens = 0
         trend_index = 0
 
-        # 1. 查询通商主面板货物与行情概况 (Mod 41, Act 0: get_panel_info)
+        # 1. 查询通商主面板货物与行情概况 (Mod 757, Act 1: get_panel_info)
         try:
-            req_panel = PacketBuilder(mod=41, act=0).build()
+            req_panel = PacketBuilder(mod=757, act=1).build()
             resp_panel = await client.request(req_panel, timeout_sec=2.5)
             logger.info("通商主面板数据同步成功 (回包长度: %d 字节)", len(resp_panel))
             panel_synced = True
@@ -62,9 +73,9 @@ class TradersTask(BaseTask):
             logger.warning("查询通商主面板失败: %s", exc)
             return TaskResult.skipped("通商主面板同步超时或功能未开放")
 
-        # 2. 查询通商日常状态与代币积分 (Mod 41, Act 2)
+        # 2. 查询通商日常状态与代币积分 (Mod 757, Act 2: daily_and_term_flag)
         try:
-            req_daily = PacketBuilder(mod=41, act=2).build()
+            req_daily = PacketBuilder(mod=757, act=2).build()
             resp_daily = await client.request(req_daily, timeout_sec=1.5)
             if len(resp_daily) >= 8:
                 reader = ByteArrayReader(resp_daily)
@@ -74,9 +85,9 @@ class TradersTask(BaseTask):
         except Exception as exc:
             logger.debug("通商日常状态同步跳过: %s", exc)
 
-        # 3. 同步最新通商行情走势指数 (Mod 41, Act 4: latest_trend)
+        # 3. 同步最新通商行情走势指数 (Mod 757, Act 5: latest_trend)
         try:
-            req_trend = PacketBuilder(mod=41, act=4).build()
+            req_trend = PacketBuilder(mod=757, act=5).write_int32(0).build()
             resp_trend = await client.request(req_trend, timeout_sec=1.5)
             if len(resp_trend) >= 4:
                 trend_index = int.from_bytes(resp_trend[:4], "big")
@@ -84,9 +95,9 @@ class TradersTask(BaseTask):
         except Exception as exc:
             logger.debug("最新通商行情趋势查询跳过: %s", exc)
 
-        # 4. 同步赛季与周期结算窗口 (Mod 41, Act 5: term_rank)
+        # 4. 同步赛季与周期结算窗口 (Mod 757, Act 6: term_rank)
         try:
-            req_rank = PacketBuilder(mod=41, act=5).build()
+            req_rank = PacketBuilder(mod=757, act=6).build()
             resp_rank = await client.request(req_rank, timeout_sec=1.5)
             logger.debug("通商赛季结算窗口: %s", resp_rank.hex())
         except Exception:

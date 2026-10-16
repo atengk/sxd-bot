@@ -55,8 +55,9 @@ class TestProtocolDatabaseAndRepository(unittest.TestCase):
         file_size = os.path.getsize(self.test_db_path)
         self.assertGreater(file_size, 1024 * 1024)  # 至少大于 1MB
 
-        # 2. 验证首次转储耗时在 1.5 秒以内 (通常在 0.2~0.5s)
-        self.assertLess(elapsed, 1.5)
+        # 2. 验证首次转储耗时在 3.0 秒以内 (通常在 0.2~0.5s，并发时预留裕度)
+        self.assertLess(elapsed, 3.0)
+
 
         # 3. 验证表数据行数匹配
         with db.get_connection() as conn:

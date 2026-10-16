@@ -397,85 +397,78 @@ class SuperSportClearCdTimeReq(BasePacket):
 
 @dataclass
 class WorldBossGetDataReq(BasePacket):
-    """获取世界 Boss 战场数据与生命值 (Mod 24, Act 1) - [SAFE_READ]
+    """获取世界 Boss 战场数据与生命值 (Mod 24, Act 1: get_world_boss_data) - [SAFE_READ]
 
     @author Ateng
     @since 2026-10-16
     """
 
-    boss_id: int
-
-    def __init__(self, boss_id: int) -> None:
+    def __init__(self) -> None:
         super().__init__(mod=24, act=1)
-        self.boss_id = boss_id
 
     def encode_payload(self) -> bytes:
-        writer = ByteArrayWriter()
-        writer.write_int32(self.boss_id)
-        return writer.to_bytes()
+        return b""
 
     @classmethod
     def decode(cls, data: bytes) -> "WorldBossGetDataReq":
-        reader = ByteArrayReader(data)
-        bid = reader.read_int32() if reader.remaining >= 4 else 0
-        return cls(boss_id=bid)
+        return cls()
 
 
 @dataclass
 class WorldBossFightReq(BasePacket):
-    """向世界 Boss 发起一次战斗挑战 (Mod 24, Act 2) - [ROUTINE_FREE]
+    """向世界 Boss 发起一次战斗挑战 (Mod 24, Act 2: fight_world_boss) - [ROUTINE_FREE]
 
     @author Ateng
     @since 2026-10-16
     """
 
-    boss_id: int
+    boss_type: int = 1
 
-    def __init__(self, boss_id: int) -> None:
+    def __init__(self, boss_type: int = 1) -> None:
         super().__init__(mod=24, act=2)
-        self.boss_id = boss_id
+        self.boss_type = boss_type
 
     def encode_payload(self) -> bytes:
         writer = ByteArrayWriter()
-        writer.write_int32(self.boss_id)
+        writer.write_uint8(self.boss_type)
         return writer.to_bytes()
 
     @classmethod
     def decode(cls, data: bytes) -> "WorldBossFightReq":
         reader = ByteArrayReader(data)
-        bid = reader.read_int32() if reader.remaining >= 4 else 0
-        return cls(boss_id=bid)
+        btype = reader.read_uint8() if reader.remaining >= 1 else 1
+        return cls(boss_type=btype)
 
 
 @dataclass
 class WorldBossInspireReq(BasePacket):
-    """消耗角色阅历免费鼓舞攻击力 (Mod 24, Act 4) - [ROUTINE_FREE]
+    """消耗角色阅历免费鼓舞攻击力 (Mod 24, Act 7: strengthen_combat) - [ROUTINE_FREE]
 
     @author Ateng
     @since 2026-10-16
     """
 
-    boss_id: int
+    inspire_type: int = 1
 
-    def __init__(self, boss_id: int) -> None:
-        super().__init__(mod=24, act=4)
-        self.boss_id = boss_id
+    def __init__(self, inspire_type: int = 1) -> None:
+        super().__init__(mod=24, act=7)
+        self.inspire_type = inspire_type
 
     def encode_payload(self) -> bytes:
         writer = ByteArrayWriter()
-        writer.write_int32(self.boss_id)
+        writer.write_uint8(self.inspire_type)
         return writer.to_bytes()
 
     @classmethod
     def decode(cls, data: bytes) -> "WorldBossInspireReq":
         reader = ByteArrayReader(data)
-        bid = reader.read_int32() if reader.remaining >= 4 else 0
-        return cls(boss_id=bid)
+        itype = reader.read_uint8() if reader.remaining >= 1 else 1
+        return cls(inspire_type=itype)
 
 
 @dataclass
 class WorldBossIngotInspireReq(BasePacket):
-    """消耗元宝 100% 成功直接鼓舞世界 Boss (Mod 24, Act 5) - [HAZARDOUS_INGOT]
+    """消耗元宝 100% 成功直接鼓舞世界 Boss (Mod 24, Act 7: strengthen_combat) - [HAZARDOUS_INGOT]
 
     前置安全红线守卫拦截。
 
@@ -483,23 +476,23 @@ class WorldBossIngotInspireReq(BasePacket):
     @since 2026-10-16
     """
 
-    boss_id: int
+    inspire_type: int = 2
     allow_ingot: bool = False
 
-    def __init__(self, boss_id: int, allow_ingot: bool = False) -> None:
-        super().__init__(mod=24, act=5)
+    def __init__(self, inspire_type: int = 2, allow_ingot: bool = False) -> None:
+        super().__init__(mod=24, act=7)
         if not allow_ingot:
             raise PermissionError("[HAZARDOUS_INGOT] ingot_inspire 涉及元宝扣除，已触发安全熔断保护！若确认执行请显式设置 allow_ingot=True")
-        self.boss_id = boss_id
+        self.inspire_type = inspire_type
         self.allow_ingot = allow_ingot
 
     def encode_payload(self) -> bytes:
         writer = ByteArrayWriter()
-        writer.write_int32(self.boss_id)
+        writer.write_uint8(self.inspire_type)
         return writer.to_bytes()
 
     @classmethod
     def decode(cls, data: bytes) -> "WorldBossIngotInspireReq":
         reader = ByteArrayReader(data)
-        bid = reader.read_int32() if reader.remaining >= 4 else 0
-        return cls(boss_id=bid, allow_ingot=True)
+        itype = reader.read_uint8() if reader.remaining >= 1 else 2
+        return cls(inspire_type=itype, allow_ingot=True)
