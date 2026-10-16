@@ -116,23 +116,33 @@ class LuckyStarTask(BaseTask):
                 logger.info("吉星高照已处于系统托管自动投掷状态 (is_auto=1)，已自动结算，无需手动发包 (零断连)")
                 rolls_done = free_times
             else:
-                # 激活面板状态并执行手动免费投掷
-                await client.send_packet(PacketBuilder(mod=38, act=5).build())
-                while free_times > 0 and rolls_done < 10:
+                # 激活面板状态并执行手动免费投掷 (加入拟真防护与连接检查)
+                if client.context.is_connected:
+                    await client.send_packet(PacketBuilder(mod=38, act=5).build())
+                    await asyncio.sleep(0.5)
+                while free_times > 0 and rolls_done < 10 and client.context.is_connected:
                     await client.send_packet(PacketBuilder(mod=38, act=0).build())
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(1.0)
+                    if not client.context.is_connected:
+                        logger.warning("投掷过程中检测到连接关闭，安全中止吉星循环")
+                        break
                     await client.send_packet(PacketBuilder(mod=38, act=4).build())
+                    await asyncio.sleep(0.5)
                     rolls_done += 1
                     free_times -= 1
                     logger.info("第 %d 次免费吉星投掷完成并结算！", rolls_done)
 
-            # 刷新最新结算点数
-            final_resp = await client.request(PacketBuilder(mod=38, act=2).build(), timeout_sec=1.5)
-            if len(final_resp) >= 8:
-                reader = ByteArrayReader(final_resp)
-                free_times = reader.read_uint16()
-                points = reader.read_uint16()
-                extra_points = reader.read_uint32()
+            # 刷新最新结算点数 (在连接活跃时安全拉取)
+            if client.context.is_connected:
+                try:
+                    final_resp = await client.request(PacketBuilder(mod=38, act=2).build(), timeout_sec=2.0)
+                    if len(final_resp) >= 8:
+                        reader = ByteArrayReader(final_resp)
+                        free_times = reader.read_uint16()
+                        points = reader.read_uint16()
+                        extra_points = reader.read_uint32()
+                except Exception:
+                    pass
 
         except Exception as roll_err:
             logger.info("吉星投掷安全收尾: %s", roll_err)

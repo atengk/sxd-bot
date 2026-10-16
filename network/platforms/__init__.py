@@ -7,11 +7,13 @@
 from network.platforms.base import BasePlatformAuthProvider
 from network.platforms.fengwan import FengwanAuthProvider
 from network.platforms.static import StaticAuthProvider
+from network.platforms.xd import XDPlatformAuthProvider
 from network.platforms.registry import PlatformAuthRegistry
 
 __all__ = [
     "BasePlatformAuthProvider",
     "FengwanAuthProvider",
     "StaticAuthProvider",
+    "XDPlatformAuthProvider",
     "PlatformAuthRegistry",
 ]

@@ -79,6 +79,7 @@ class AccountRecord:
     server_id: int = 25268
     server_host: Optional[str] = None
     server_port: Optional[int] = None
+    player_id: int = 0
     enabled: bool = True
     hosting_enabled: bool = True
     evade_state: str = "none"  # "none" | "evading"
@@ -195,6 +196,7 @@ class ConfigDatabase:
                     server_id INTEGER NOT NULL DEFAULT 25268,
                     server_host TEXT,
                     server_port INTEGER,
+                    player_id INTEGER NOT NULL DEFAULT 0,
                     enabled INTEGER NOT NULL DEFAULT 1,
                     hosting_enabled INTEGER NOT NULL DEFAULT 1,
                     evade_state TEXT NOT NULL DEFAULT 'none',
@@ -218,6 +220,10 @@ class ConfigDatabase:
                 );
                 """
             )
+            try:
+                conn.execute("ALTER TABLE tb_accounts ADD COLUMN player_id INTEGER NOT NULL DEFAULT 0;")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
 
     def _auto_bootstrap_if_empty(self) -> None:
@@ -315,9 +321,9 @@ class ConfigDatabase:
                     """
                     INSERT INTO tb_accounts (
                         alias, platform, username, password, server, server_id,
-                        server_host, server_port, enabled, hosting_enabled,
+                        server_host, server_port, player_id, enabled, hosting_enabled,
                         evade_state, evade_since, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         account.alias,
@@ -328,6 +334,7 @@ class ConfigDatabase:
                         account.server_id,
                         account.server_host,
                         account.server_port,
+                        account.player_id,
                         1 if account.enabled else 0,
                         1 if account.hosting_enabled else 0,
                         account.evade_state,
@@ -416,6 +423,7 @@ class ConfigDatabase:
                     server_id = ?,
                     server_host = ?,
                     server_port = ?,
+                    player_id = ?,
                     enabled = ?,
                     hosting_enabled = ?,
                     evade_state = ?,
@@ -431,6 +439,7 @@ class ConfigDatabase:
                     account.server_id,
                     account.server_host,
                     account.server_port,
+                    account.player_id,
                     1 if account.enabled else 0,
                     1 if account.hosting_enabled else 0,
                     account.evade_state,
@@ -438,6 +447,26 @@ class ConfigDatabase:
                     now,
                     account.alias,
                 ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def update_account_player_id(self, alias: str, player_id: int) -> bool:
+        """记录或更新账号绑定的真实游戏角色 Player ID
+
+        Args:
+            alias: 账号别名。
+            player_id: 游戏内角色唯一 ID。
+
+        Returns:
+            是否更新成功。
+        """
+        now = time.time()
+        with self.connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE tb_accounts SET player_id = ?, updated_at = ? WHERE alias = ?;",
+                (player_id, now, alias),
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -456,6 +485,43 @@ class ConfigDatabase:
             cursor.execute("DELETE FROM tb_accounts WHERE alias = ?;", (alias,))
             conn.commit()
             return cursor.rowcount > 0
+
+    def rename_account_alias(self, old_alias: str, new_alias: str) -> bool:
+        """重命名账号别名并级联更新关联日常配置
+
+        Args:
+            old_alias: 原账号别名。
+            new_alias: 新账号别名。
+
+        Returns:
+            是否重命名成功。
+        """
+        if old_alias == new_alias:
+            return True
+        with self.connect() as conn:
+            try:
+                cursor = conn.cursor()
+                cursor.execute("SELECT 1 FROM tb_accounts WHERE alias = ?;", (new_alias,))
+                if cursor.fetchone():
+                    logger.warning("目标账号别名 '%s' 已存在，重命名被拒绝", new_alias)
+                    return False
+
+                cursor.execute("PRAGMA foreign_keys = OFF;")
+                cursor.execute(
+                    "UPDATE tb_routine_configs SET alias = ? WHERE alias = ?;",
+                    (new_alias, old_alias),
+                )
+                cursor.execute(
+                    "UPDATE tb_accounts SET alias = ?, updated_at = ? WHERE alias = ?;",
+                    (new_alias, time.time(), old_alias),
+                )
+                cursor.execute("PRAGMA foreign_keys = ON;")
+                conn.commit()
+                return cursor.rowcount > 0
+            except Exception as e:
+                logger.error("重命名账号别名失败 [%s -> %s]: %s", old_alias, new_alias, e)
+                return False
+
 
     def set_hosting_state(self, alias: str, hosting_enabled: bool) -> bool:
         """更新长连接托管开关状态
@@ -664,6 +730,7 @@ class ConfigDatabase:
             server_id=row["server_id"],
             server_host=row["server_host"],
             server_port=row["server_port"],
+            player_id=row["player_id"] if "player_id" in row.keys() else 0,
             enabled=bool(row["enabled"]),
             hosting_enabled=bool(row["hosting_enabled"]),
             evade_state=row["evade_state"],

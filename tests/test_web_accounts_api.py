@@ -198,6 +198,53 @@ class TestWebAccountsApi(unittest.TestCase):
         res2 = client.get("/api/accounts", headers={"Authorization": "Bearer secure_token_123"})
         self.assertEqual(res2.status_code, 200)
 
+    def test_account_test_login_endpoint(self) -> None:
+        """测试 POST /api/accounts/test-login 探测端点"""
+        from unittest.mock import patch
+        from network.web_auth import GatewayCredentials
+
+        # 1. 成功模拟
+        mock_creds = GatewayCredentials(
+            server_host="9x604.sxdweb.xd.com",
+            server_port=8475,
+            player_name="357260427",
+            hash_code="mock_token_hash_123",
+            time="1792151706",
+            platform="xd",
+            server_id=3542,
+            nickname="剑仙",
+        )
+        with patch("network.web_auth.WebAuthFetcher.resolve_credentials", return_value=mock_creds):
+            res = self.client.post(
+                "/api/accounts/test-login",
+                json={
+                    "platform": "xd",
+                    "username": "test_user",
+                    "password": "test_password",
+                    "server": "S3542",
+                },
+            )
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertTrue(data["success"])
+            self.assertEqual(data["server_host"], "9x604.sxdweb.xd.com")
+            self.assertEqual(data["player_name"], "357260427")
+
+        # 2. 失败模拟
+        with patch("network.web_auth.WebAuthFetcher.resolve_credentials", return_value=None):
+            res_fail = self.client.post(
+                "/api/accounts/test-login",
+                json={
+                    "platform": "xd",
+                    "username": "bad_user",
+                    "password": "wrong_password",
+                    "server": "S3542",
+                },
+            )
+            self.assertEqual(res_fail.status_code, 200)
+            data_fail = res_fail.json()
+            self.assertFalse(data_fail["success"])
+
 
 if __name__ == "__main__":
     unittest.main()

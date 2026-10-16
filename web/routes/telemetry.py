@@ -229,3 +229,22 @@ async def get_audit_logs(alias: str, request: Request) -> Dict[str, Any]:
         "audit_records": audit_records,
         "total_audit_count": len(audit_records),
     }
+
+
+@router.post("/{alias}/telemetry/sync", response_model=Dict[str, Any])
+async def sync_telemetry(alias: str, request: Request) -> Dict[str, Any]:
+    """按需触发指定账号全景遥测实时抓取与 SQLite 同步"""
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="会话管理器未就绪",
+        )
+    result = await session_manager.sync_telemetry(alias)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=result.get("message", "全景态势同步失败"),
+        )
+    return result
+

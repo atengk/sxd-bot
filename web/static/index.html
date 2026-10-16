@@ -1,1219 +1,1667 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>神仙道无头协议自动化控制台 - 交互原型</title>
+  <title>神仙道无头自动化控制台</title>
+  
+  <!-- 防止白屏闪烁 (Anti-FOUC) 主题自适应注入 -->
+  <script>
+    (function() {
+      try {
+        const theme = localStorage.getItem('sxd_theme') || 'dark';
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- Tailwind CSS 配置与运行时 (强制 class selector 模式) -->
+  <script>
+    window.tailwind = window.tailwind || {};
+    window.tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+            }
+          }
+        }
+      }
+    };
+  </script>
   <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+
+  <!-- Element Plus 现代化组件库 CSS (含原生 Dark Mode CSS 变量) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/theme-chalk/dark/css-vars.css" />
+
+  <!-- Vue 3 & Element Plus 核心 JS (单体单页托管，零 Node.js 编译工具链) -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/element-plus/dist/index.full.min.js"></script>
+
   <style>
+    /* 全局明暗双模可靠 CSS 变量系统 (杜绝 Tailwind CDN dark 模式失效导致黑底白卡) */
     :root {
-      --bg: #0f172a;
-      --card-bg: #1e293b;
-      --border: #334155;
-      --text: #f8fafc;
-      --text-muted: #94a3b8;
-      --primary: #38bdf8;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
+      --bg-page: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-card-sub: #f8fafc;
+      --bg-card-hover: #f1f5f9;
+      --border-card: #e2e8f0;
+      --border-sub: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --text-muted: #64748b;
+      --header-bg: rgba(255, 255, 255, 0.94);
+      --header-border: #e2e8f0;
+      --terminal-bg: #0b0f19;
+      --terminal-border: #1e293b;
+      --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+    }
+    html.dark {
+      --bg-page: #0b0f19;
+      --bg-card: #111827;
+      --bg-card-sub: #0e1626;
+      --bg-card-hover: #162033;
+      --border-card: #1e293b;
+      --border-sub: #283548;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --header-bg: rgba(17, 24, 39, 0.94);
+      --header-border: #1e293b;
+      --terminal-bg: #070a12;
+      --terminal-border: #1a2333;
+      --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.25);
     }
     body {
-      background-color: var(--bg);
-      color: var(--text);
+      background-color: var(--bg-page);
+      color: var(--text-primary);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      transition: background-color 0.2s ease, color 0.2s ease;
+      overflow-x: hidden;
+    }
+    .themed-card {
+      background-color: var(--bg-card) !important;
+      border: 1px solid var(--border-card) !important;
+      color: var(--text-primary) !important;
+      box-shadow: var(--card-shadow);
+      border-radius: 0.75rem;
+      transition: all 0.2s ease;
+    }
+    .themed-card:hover {
+      border-color: var(--border-sub) !important;
+    }
+    .themed-subcard {
+      background-color: var(--bg-card-sub) !important;
+      border: 1px solid var(--border-card) !important;
+      border-radius: 0.5rem;
+    }
+    .themed-header {
+      background-color: var(--header-bg) !important;
+      border-bottom: 1px solid var(--header-border) !important;
+      backdrop-filter: blur(12px);
+    }
+    .themed-input {
+      background-color: var(--bg-card-sub) !important;
+      border: 1px solid var(--border-card) !important;
+      color: var(--text-primary) !important;
+    }
+    .themed-input:focus {
+      border-color: #0ea5e9 !important;
+      outline: none;
+    }
+    .themed-terminal {
+      background-color: var(--terminal-bg) !important;
+      border: 1px solid var(--terminal-border) !important;
     }
     .custom-scroll::-webkit-scrollbar {
       width: 6px;
       height: 6px;
     }
     .custom-scroll::-webkit-scrollbar-track {
-      background: #0f172a;
+      background: transparent;
     }
     .custom-scroll::-webkit-scrollbar-thumb {
-      background: #334155;
+      background: rgba(100, 116, 139, 0.4);
       border-radius: 3px;
     }
     .grid-cell:hover {
-      transform: scale(1.05);
+      transform: scale(1.08);
       z-index: 10;
+    }
+    /* 游戏道具品质光芒渲染 */
+    .quality-gold {
+      border-color: rgba(245, 158, 11, 0.85) !important;
+      background: linear-gradient(180deg, rgba(245, 158, 11, 0.16) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+      box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+    }
+    .quality-purple {
+      border-color: rgba(168, 85, 247, 0.85) !important;
+      background: linear-gradient(180deg, rgba(168, 85, 247, 0.16) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+      box-shadow: 0 0 10px rgba(168, 85, 247, 0.25);
+    }
+    .quality-blue {
+      border-color: rgba(14, 165, 233, 0.85) !important;
+      background: linear-gradient(180deg, rgba(14, 165, 233, 0.16) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+      box-shadow: 0 0 8px rgba(14, 165, 233, 0.2);
+    }
+    /* Element Plus Dark Overrides */
+    html.dark .el-notification {
+      background-color: #111827 !important;
+      border-color: #1e293b !important;
+    }
+    html.dark .el-notification__title {
+      color: #f8fafc !important;
+    }
+    html.dark .el-notification__content {
+      color: #94a3b8 !important;
+    }
+    [v-cloak] {
+      display: none !important;
     }
   </style>
 </head>
 <body class="min-h-screen flex flex-col antialiased selection:bg-sky-500 selection:text-white">
 
-  <!-- 顶部导航与状态栏 -->
-  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between shadow-lg">
-    <div class="flex items-center space-x-3">
-      <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-sky-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-md shadow-sky-500/20">
-        仙
-      </div>
-      <div>
-        <div class="flex items-center space-x-2">
-          <h1 class="font-bold text-base tracking-wide text-slate-100">神仙道无头自动化控制台</h1>
-          <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-            FastAPI 常驻守护中
-          </span>
-        </div>
-        <p class="text-xs text-slate-400">SQLite 独立配置仓储 (data/config.sqlite) · 中央调度代理模式</p>
-      </div>
-    </div>
+  <!-- Vue 3 根应用容器 -->
+  <div id="app" v-cloak class="min-h-screen flex flex-col">
 
-    <!-- 快捷操作区 -->
-    <div class="flex items-center space-x-3">
-      <button onclick="triggerAllRoutines()" class="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5 shadow-sm shadow-sky-600/30 active:scale-95">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-        全员日常流水线
-      </button>
-
-      <button onclick="toggleAllEvade()" class="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg text-xs font-medium transition flex items-center gap-1.5 active:scale-95">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-        一键全员避让
-      </button>
-
-      <button onclick="openAccountModal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium transition flex items-center gap-1 active:scale-95">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        添加账号
-      </button>
-
-      <button onclick="openTokenModal()" title="Web 访问口令设置" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 rounded-lg transition active:scale-95">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <!-- 主体工作区 -->
-  <main class="flex-1 p-6 space-y-6 max-w-7xl mx-auto w-full">
-
-    <!-- 全局宏观态势指标 -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p class="text-xs text-slate-400 font-medium">账号状态监控</p>
-          <div class="flex items-baseline space-x-2 mt-1">
-            <span class="text-2xl font-bold text-slate-100">4</span>
-            <span class="text-xs text-slate-400">总纳管</span>
-          </div>
-          <div class="flex items-center gap-2 mt-2 text-xs">
-            <span class="flex items-center gap-1 text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>2 托管中</span>
-            <span class="flex items-center gap-1 text-amber-400"><span class="w-2 h-2 rounded-full bg-amber-400"></span>1 避让中</span>
-            <span class="flex items-center gap-1 text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-500"></span>1 停用</span>
-          </div>
-        </div>
-        <div class="p-3 bg-sky-500/10 rounded-lg text-sky-400 border border-sky-500/20">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-        </div>
-      </div>
-
-      <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p class="text-xs text-slate-400 font-medium">全服总资产 (只读)</p>
-          <div class="flex items-baseline space-x-2 mt-1">
-            <span class="text-2xl font-bold text-amber-300">2.49 亿</span>
-            <span class="text-xs text-slate-400">铜钱</span>
-          </div>
-          <p class="text-xs text-sky-400 mt-2 font-mono">42,390 <span class="text-slate-400">元宝 (今日扣减 0)</span></p>
-        </div>
-        <div class="p-3 bg-amber-500/10 rounded-lg text-amber-400 border border-amber-500/20">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        </div>
-      </div>
-
-      <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p class="text-xs text-slate-400 font-medium">今日小助手达成率</p>
-          <div class="flex items-baseline space-x-2 mt-1">
-            <span class="text-2xl font-bold text-slate-100">82.5%</span>
-            <span class="text-xs text-emerald-400">+12% vs 昨日</span>
-          </div>
-          <div class="w-36 bg-slate-700 h-1.5 rounded-full mt-2.5 overflow-hidden">
-            <div class="bg-emerald-500 h-full rounded-full" style="width: 82.5%"></div>
-          </div>
-        </div>
-        <div class="p-3 bg-emerald-500/10 rounded-lg text-emerald-400 border border-emerald-500/20">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        </div>
-      </div>
-
-      <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-4 flex items-center justify-between">
-        <div>
-          <p class="text-xs text-slate-400 font-medium">防互踢避让状态</p>
-          <div class="flex items-baseline space-x-2 mt-1">
-            <span class="text-2xl font-bold text-amber-400">1 账号</span>
-            <span class="text-xs text-slate-400">玩家自登中</span>
-          </div>
-          <p class="text-xs text-slate-400 mt-2">自动暂停重连 · 静默探测启用</p>
-        </div>
-        <div class="p-3 bg-purple-500/10 rounded-lg text-purple-400 border border-purple-500/20">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-        </div>
-      </div>
-    </div>
-
-    <!-- 账号卡片矩阵 -->
-    <div class="space-y-3">
-      <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-          <span>账号连接与托管矩阵</span>
-          <span class="text-xs font-normal text-slate-400">(卡片支持独立开关与详情设置)</span>
-        </h2>
-        <span class="text-xs text-slate-400">点击卡片可查看【资产背包快照】与【35项日常独立开关】</span>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-
-        <!-- 卡片 1: 主号 (托管在线) -->
-        <div class="bg-slate-800/90 border border-slate-700 hover:border-sky-500/50 rounded-xl p-5 shadow-sm transition-all duration-200 flex flex-col justify-between relative group">
-          <div class="absolute top-4 right-4 flex items-center space-x-2">
-            <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              托管在线
-            </span>
-          </div>
-
-          <div>
-            <div class="flex items-center space-x-3">
-              <div class="h-10 w-10 rounded-full bg-gradient-to-tr from-amber-500 to-orange-400 flex items-center justify-center font-bold text-slate-900 text-sm">
-                剑
-              </div>
-              <div>
-                <h3 class="font-bold text-slate-100 flex items-center gap-2 text-base">
-                  主号
-                  <span class="text-xs font-mono font-normal text-slate-400">#fengwanyx</span>
-                </h3>
-                <p class="text-xs text-slate-400">138区 · 角色: <strong class="text-slate-200 font-semibold">神威剑仙</strong> (Lv 128 · VIP 6)</p>
-              </div>
-            </div>
-
-            <!-- 核心资产指标条 -->
-            <div class="mt-4 grid grid-cols-3 gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-center text-xs">
-              <div>
-                <p class="text-slate-400">铜钱</p>
-                <p class="font-bold text-amber-300 font-mono mt-0.5">1.82 亿</p>
-              </div>
-              <div class="border-x border-slate-800">
-                <p class="text-slate-400">元宝</p>
-                <p class="font-bold text-sky-400 font-mono mt-0.5">36,800</p>
-              </div>
-              <div>
-                <p class="text-slate-400">声望</p>
-                <p class="font-bold text-purple-300 font-mono mt-0.5">82.4 万</p>
-              </div>
-            </div>
-
-            <!-- 体力与日常进度 -->
-            <div class="mt-3 space-y-1.5 text-xs">
-              <div class="flex justify-between text-slate-400">
-                <span>体力储备: 185 / 200</span>
-                <span class="text-slate-300">92%</span>
-              </div>
-              <div class="w-full bg-slate-700/60 h-1.5 rounded-full overflow-hidden">
-                <div class="bg-sky-500 h-full rounded-full" style="width: 92%"></div>
-              </div>
-
-              <div class="flex justify-between text-slate-400 pt-1">
-                <span>小助手日常: 31 / 35 完成</span>
-                <span class="text-emerald-400 font-medium">88%</span>
-              </div>
-              <div class="w-full bg-slate-700/60 h-1.5 rounded-full overflow-hidden">
-                <div class="bg-emerald-500 h-full rounded-full" style="width: 88%"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 卡片操作行 -->
-          <div class="mt-5 pt-3 border-t border-slate-700/70 flex items-center justify-between text-xs">
-            <label class="flex items-center cursor-pointer select-none">
-              <input type="checkbox" checked onchange="toggleHosting('主号', this.checked)" class="sr-only peer">
-              <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 relative"></div>
-              <span class="ml-2 text-slate-300 font-medium peer-checked:text-emerald-400">长连接托管</span>
-            </label>
-
-            <div class="flex items-center space-x-2">
-              <button onclick="triggerRoutine('主号')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded font-medium transition active:scale-95">
-                ⚡ 单跑日常
-              </button>
-              <button onclick="openDrawer('主号')" class="px-2.5 py-1 bg-sky-600/20 hover:bg-sky-600/30 text-sky-400 border border-sky-500/30 rounded font-medium transition active:scale-95">
-                详情设置
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 卡片 2: 打工小号1 (避让状态) -->
-        <div class="bg-slate-800/90 border border-amber-500/40 hover:border-amber-500/80 rounded-xl p-5 shadow-sm transition-all duration-200 flex flex-col justify-between relative group">
-          <div class="absolute top-4 right-4 flex items-center space-x-2">
-            <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
-              <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-              玩家在线·避让中
-            </span>
-          </div>
-
-          <div>
-            <div class="flex items-center space-x-3">
-              <div class="h-10 w-10 rounded-full bg-gradient-to-tr from-amber-700 to-yellow-600 flex items-center justify-center font-bold text-slate-100 text-sm">
-                桃
-              </div>
-              <div>
-                <h3 class="font-bold text-slate-100 flex items-center gap-2 text-base">
-                  打工小号1
-                  <span class="text-xs font-mono font-normal text-slate-400">#fengwanyx</span>
-                </h3>
-                <p class="text-xs text-slate-400">138区 · 角色: <strong class="text-slate-200 font-semibold">摘桃圣手</strong> (Lv 92 · VIP 2)</p>
-              </div>
-            </div>
-
-            <!-- 避让告警信息条 -->
-            <div class="mt-3.5 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 text-xs text-amber-300 flex items-center gap-2">
-              <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-              <span>17:28 检测到异地登录，已触发互踢避让。静默探测冷却还剩 22 分钟。</span>
-            </div>
-
-            <!-- 核心资产指标条 -->
-            <div class="mt-3 grid grid-cols-3 gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-center text-xs">
-              <div>
-                <p class="text-slate-400">铜钱</p>
-                <p class="font-bold text-amber-300 font-mono mt-0.5">4,520 万</p>
-              </div>
-              <div class="border-x border-slate-800">
-                <p class="text-slate-400">元宝</p>
-                <p class="font-bold text-sky-400 font-mono mt-0.5">3,210</p>
-              </div>
-              <div>
-                <p class="text-slate-400">声望</p>
-                <p class="font-bold text-purple-300 font-mono mt-0.5">12.8 万</p>
-              </div>
-            </div>
-
-            <!-- 体力 -->
-            <div class="mt-3 space-y-1.5 text-xs">
-              <div class="flex justify-between text-slate-400">
-                <span>体力储备: 140 / 200</span>
-                <span class="text-slate-300">70%</span>
-              </div>
-              <div class="w-full bg-slate-700/60 h-1.5 rounded-full overflow-hidden">
-                <div class="bg-sky-500 h-full rounded-full" style="width: 70%"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 卡片操作行 -->
-          <div class="mt-5 pt-3 border-t border-slate-700/70 flex items-center justify-between text-xs">
-            <button onclick="resumeHosting('打工小号1')" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded font-semibold transition active:scale-95 flex items-center gap-1 shadow-sm">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-              打完了·恢复托管
-            </button>
-
-            <button onclick="openDrawer('打工小号1')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded font-medium transition active:scale-95">
-              详情设置
-            </button>
-          </div>
-        </div>
-
-        <!-- 卡片 3: 竞技小号2 (托管在线) -->
-        <div class="bg-slate-800/90 border border-slate-700 hover:border-sky-500/50 rounded-xl p-5 shadow-sm transition-all duration-200 flex flex-col justify-between relative group">
-          <div class="absolute top-4 right-4 flex items-center space-x-2">
-            <span class="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              托管在线
-            </span>
-          </div>
-
-          <div>
-            <div class="flex items-center space-x-3">
-              <div class="h-10 w-10 rounded-full bg-gradient-to-tr from-purple-600 to-pink-500 flex items-center justify-center font-bold text-white text-sm">
-                武
-              </div>
-              <div>
-                <h3 class="font-bold text-slate-100 flex items-center gap-2 text-base">
-                  竞技小号2
-                  <span class="text-xs font-mono font-normal text-slate-400">#static</span>
-                </h3>
-                <p class="text-xs text-slate-400">140区 · 角色: <strong class="text-slate-200 font-semibold">九天玄女</strong> (Lv 88 · VIP 1)</p>
-              </div>
-            </div>
-
-            <!-- 核心资产指标条 -->
-            <div class="mt-4 grid grid-cols-3 gap-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800 text-center text-xs">
-              <div>
-                <p class="text-slate-400">铜钱</p>
-                <p class="font-bold text-amber-300 font-mono mt-0.5">2,180 万</p>
-              </div>
-              <div class="border-x border-slate-800">
-                <p class="text-slate-400">元宝</p>
-                <p class="font-bold text-sky-400 font-mono mt-0.5">2,380</p>
-              </div>
-              <div>
-                <p class="text-slate-400">声望</p>
-                <p class="font-bold text-purple-300 font-mono mt-0.5">25.1 万</p>
-              </div>
-            </div>
-
-            <!-- 进度 -->
-            <div class="mt-3 space-y-1.5 text-xs">
-              <div class="flex justify-between text-slate-400">
-                <span>体力储备: 95 / 200</span>
-                <span class="text-slate-300">47%</span>
-              </div>
-              <div class="w-full bg-slate-700/60 h-1.5 rounded-full overflow-hidden">
-                <div class="bg-sky-500 h-full rounded-full" style="width: 47%"></div>
-              </div>
-
-              <div class="flex justify-between text-slate-400 pt-1">
-                <span>小助手日常: 18 / 35 完成</span>
-                <span class="text-emerald-400 font-medium">51%</span>
-              </div>
-              <div class="w-full bg-slate-700/60 h-1.5 rounded-full overflow-hidden">
-                <div class="bg-emerald-500 h-full rounded-full" style="width: 51%"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 卡片操作行 -->
-          <div class="mt-5 pt-3 border-t border-slate-700/70 flex items-center justify-between text-xs">
-            <label class="flex items-center cursor-pointer select-none">
-              <input type="checkbox" checked onchange="toggleHosting('竞技小号2', this.checked)" class="sr-only peer">
-              <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 relative"></div>
-              <span class="ml-2 text-slate-300 font-medium peer-checked:text-emerald-400">长连接托管</span>
-            </label>
-
-            <div class="flex items-center space-x-2">
-              <button onclick="triggerRoutine('竞技小号2')" class="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded font-medium transition active:scale-95">
-                ⚡ 单跑日常
-              </button>
-              <button onclick="openDrawer('竞技小号2')" class="px-2.5 py-1 bg-sky-600/20 hover:bg-sky-600/30 text-sky-400 border border-sky-500/30 rounded font-medium transition active:scale-95">
-                详情设置
-              </button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- 底部实时 SSE 流式终端控制台 -->
-    <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
-      <div class="bg-slate-950 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between">
+    <!-- 顶部导航与状态栏 (响应式防折断、高质感毛玻璃) -->
+    <header class="themed-header sticky top-0 z-40 px-4 sm:px-6 py-3 transition-colors duration-200 shadow-sm">
+      <div class="max-w-7xl mx-auto flex items-center justify-between gap-3 flex-wrap">
         <div class="flex items-center space-x-3">
-          <div class="flex items-center space-x-1.5">
-            <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
-            <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
-            <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+          <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-sky-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-sky-500/20 shrink-0">
+            仙
           </div>
-          <span class="text-xs font-semibold text-slate-300 tracking-wider">实时执行日志 (SSE Stream)</span>
-
-          <!-- 账号切换 Tab -->
-          <div class="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs ml-4" id="logTabs">
-            <button onclick="switchLogTab('all')" class="px-2.5 py-1 rounded bg-sky-600 text-white font-medium" id="tab-all">全部流水</button>
-            <button onclick="switchLogTab('主号')" class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200" id="tab-主号">主号</button>
-            <button onclick="switchLogTab('打工小号1')" class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200" id="tab-打工小号1">打工小号1</button>
-            <button onclick="switchLogTab('竞技小号2')" class="px-2.5 py-1 rounded text-slate-400 hover:text-slate-200" id="tab-竞技小号2">竞技小号2</button>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h1 class="font-bold text-base tracking-wide text-slate-800 dark:text-slate-100">神仙道无头协议自动化控制台</h1>
+              <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shrink-0">
+                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                FastAPI 常驻守护中
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400">真机 Socket 托管 · 全景态势即查即存 · 明暗双模 · SQLite 独立仓储</p>
           </div>
         </div>
 
-        <div class="flex items-center space-x-2 text-xs">
-          <button onclick="simulateLogEntry()" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
-            + 模拟日志
+        <!-- 快捷操作区 (响应式弹性排列，防止截断) -->
+        <div class="flex items-center gap-2 flex-wrap shrink-0">
+          <!-- 全员日常流水线 -->
+          <button @click="triggerAllRoutines" class="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5 shadow-sm shadow-sky-600/30 active:scale-95">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            全员日常
           </button>
-          <button onclick="clearLogs()" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
-            清屏
+
+          <!-- 一键全员同步态势 -->
+          <button @click="syncAllTelemetry" :disabled="syncingAll" class="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-600/20 hover:bg-indigo-100 dark:hover:bg-indigo-600/30 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 rounded-lg text-xs font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50">
+            <svg class="w-3.5 h-3.5" :class="syncingAll ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            同步全员态势
+          </button>
+
+          <!-- 一键全员避让 -->
+          <button @click="toggleAllEvade" class="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 rounded-lg text-xs font-medium transition flex items-center gap-1.5 active:scale-95">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            全员避让
+          </button>
+
+          <!-- 添加账号 -->
+          <button @click="openAccountModal" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-medium transition flex items-center gap-1 active:scale-95">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            添加账号
+          </button>
+
+          <!-- ☀️/🌙 明暗双模主题切换按钮 -->
+          <button @click="toggleTheme" :title="isDark ? '切换至明亮白昼模式' : '切换至暗黑极客模式'" class="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-amber-500 dark:text-yellow-300 border border-slate-300 dark:border-slate-700 rounded-lg transition active:scale-95">
+            <svg v-if="isDark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+          </button>
+
+          <!-- Web 口令设置 -->
+          <button @click="openTokenModal" title="Web 访问口令设置" class="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg transition active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
           </button>
         </div>
       </div>
+    </header>
 
-      <!-- 日志输出视窗 -->
-      <div id="consoleBody" class="p-4 h-48 overflow-y-auto font-mono text-xs text-slate-300 space-y-1.5 custom-scroll bg-slate-950/90">
-        <p class="text-slate-500">[17:20:00] [System] FastAPI Web 服务启动成功，监听 0.0.0.0:8000</p>
-        <p class="text-slate-500">[17:20:01] [Storage] 成功加载 SQLite 配置仓储 data/config.sqlite，纳管 4 个账号</p>
-        <p class="text-emerald-400">[17:20:05] [主号] [Online Hosting] Socket TCP 长连接握手成功 (Ping: 38ms)</p>
-        <p class="text-sky-300">[17:20:08] [主号] [QueryService] 角色画像同步完成: 神威剑仙 (Lv 128), 铜钱 182,490,120, 元宝 36,800</p>
-        <p class="text-emerald-400">[17:20:10] [竞技小号2] [Online Hosting] Socket TCP 长连接握手成功 (Ping: 42ms)</p>
-        <p class="text-amber-400 font-semibold">[17:28:14] [打工小号1] [Mutual Evade] 收到 Mod_Player 异地登录通知 (顶号)。自动触发防互踢避让，已释放连接并挂起重连！</p>
-        <p class="text-slate-400">[17:28:15] [打工小号1] [Silent Probe] 静默探测定时器就绪，将于 18:28 发起首次下线探测。</p>
-        <p class="text-slate-300" id="liveLogAnchor">[17:42:00] [主号] [Routine Free] 自动完成仙府药园免费除草与浇水，获得经验 +240,000</p>
-      </div>
-    </div>
-  </main>
+    <!-- 主体工作区 -->
+    <main class="flex-1 p-4 sm:p-6 space-y-6 max-w-7xl mx-auto w-full">
 
-  <!-- 账号详情与设置抽屉 (Slide Drawer) -->
-  <div id="drawerOverlay" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden transition-opacity" onclick="closeDrawer()"></div>
-  <aside id="detailDrawer" class="fixed top-0 right-0 bottom-0 w-full max-w-2xl bg-slate-900 border-l border-slate-800 z-50 shadow-2xl flex flex-col transform translate-x-full transition-transform duration-300 ease-in-out">
-    
-    <!-- 抽屉头部 -->
-    <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-      <div class="flex items-center space-x-3">
-        <div class="h-9 w-9 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 flex items-center justify-center font-bold text-sm" id="drawerAvatar">
-          主
-        </div>
-        <div>
-          <h2 class="font-bold text-slate-100 text-base" id="drawerTitle">主号 · 详情与设置</h2>
-          <p class="text-xs text-slate-400" id="drawerSubtitle">138区 · 神威剑仙 (Lv 128) · 数据已落盘</p>
-        </div>
-      </div>
-      <button onclick="closeDrawer()" class="p-1.5 text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800 transition">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-      </button>
-    </div>
-
-    <!-- 抽屉 Tab 导航 -->
-    <div class="flex border-b border-slate-800 px-6 bg-slate-900/90 text-xs">
-      <button onclick="switchDrawerTab('assets')" class="py-3 px-3.5 font-medium border-b-2 border-sky-500 text-sky-400" id="dtab-assets">资产态势</button>
-      <button onclick="switchDrawerTab('assistant')" class="py-3 px-3.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200" id="dtab-assistant">小助手进度</button>
-      <button onclick="switchDrawerTab('routines')" class="py-3 px-3.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200" id="dtab-routines">35项日常独立配置</button>
-      <button onclick="switchDrawerTab('audit')" class="py-3 px-3.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200" id="dtab-audit">元宝审计图表</button>
-    </div>
-
-    <!-- 抽屉内容主体 -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scroll">
-
-      <!-- Tab 1: 资产态势 (背包与伙伴) -->
-      <div id="content-assets" class="space-y-5">
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider">主背包道具全景网格 (100格只读快照)</h3>
-            <span class="text-xs text-sky-400">只读快照 · 不会触发误变卖</span>
+      <!-- 全局宏观态势指标卡片 (自研统一 themed-card，绝不死白) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="themed-card p-4 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">账号状态监控</p>
+            <div class="flex items-baseline space-x-2 mt-1">
+              <span class="text-2xl font-bold font-mono text-slate-800 dark:text-slate-100">{{ accounts.length }}</span>
+              <span class="text-xs text-slate-400">总纳管</span>
+            </div>
+            <div class="flex items-center space-x-3 text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-mono">
+              <span class="text-emerald-500 font-semibold">● {{ hostedCount }} 托管中</span>
+              <span class="text-amber-500 font-semibold">● {{ evadeCount }} 避让中</span>
+              <span class="text-slate-400">○ {{ disabledCount }} 停用</span>
+            </div>
           </div>
-          <div id="inventoryGrid" class="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800 max-h-72 overflow-y-auto custom-scroll">
-            <!-- 动态渲染 100 格 -->
+          <div class="p-3 bg-sky-500/10 text-sky-500 rounded-xl">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
           </div>
-          <p class="text-[11px] text-slate-500 mt-1.5 flex items-center justify-between">
-            <span id="inventoryLoadText">当前背包负荷: 0 / 100</span>
-            <span class="text-slate-400">金/紫/蓝/白品质边框 · 点击查看道具详情</span>
+        </div>
+
+        <div class="themed-card p-4 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">全盘总资产 (只读遥测)</p>
+            <div class="flex items-baseline space-x-2 mt-1">
+              <span class="text-2xl font-bold font-mono text-amber-500">{{ totalCoinsFormatted }}</span>
+              <span class="text-xs text-slate-400">铜钱</span>
+            </div>
+            <div class="flex items-center space-x-2 text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-mono">
+              <span class="text-sky-500 font-semibold">💎 {{ totalIngotsFormatted }} 元宝</span>
+              <span class="text-emerald-500">(零元宝风控)</span>
+            </div>
+          </div>
+          <div class="p-3 bg-amber-500/10 text-amber-500 rounded-xl">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+        </div>
+
+        <div class="themed-card p-4 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">小助手达成率</p>
+            <div class="flex items-baseline space-x-2 mt-1">
+              <span class="text-2xl font-bold font-mono text-emerald-500">{{ averageLivenessRate }}%</span>
+              <span class="text-xs text-slate-400">综合平均</span>
+            </div>
+            <div class="w-28 bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full mt-2.5 overflow-hidden">
+              <div class="bg-emerald-500 h-full rounded-full transition-all duration-300" :style="{ width: averageLivenessRate + '%' }"></div>
+            </div>
+          </div>
+          <div class="p-3 bg-emerald-500/10 text-emerald-500 rounded-xl">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          </div>
+        </div>
+
+        <div class="themed-card p-4 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">防互踢避让状态</p>
+            <div class="flex items-baseline space-x-2 mt-1">
+              <span class="text-2xl font-bold font-mono text-purple-500">{{ evadeCount }} 账号</span>
+              <span class="text-xs text-slate-400">已避让</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-2">自动解除重连，静默探测自愈</p>
+          </div>
+          <div class="p-3 bg-purple-500/10 text-purple-500 rounded-xl">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 账号卡片矩阵 (真机状态高亮，绝杀死白) -->
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <span>账号连接与托管矩阵</span>
+            <span class="text-xs text-slate-400 font-normal">(点击【详情设置】可查看【100格背包道具】与【35项日常独立配置】)</span>
+          </h2>
+          <div class="flex items-center space-x-2">
+            <button @click="loadAccounts" :disabled="loadingAccounts" class="text-xs text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" :class="loadingAccounts ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              刷新列表
+            </button>
+          </div>
+        </div>
+
+        <div v-if="!accounts.length && !loadingAccounts" class="themed-card p-12 text-center text-slate-400">
+          <p class="text-sm">尚未录入任何账号</p>
+          <button @click="openAccountModal" class="mt-3 px-4 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-medium shadow-sm hover:bg-sky-500 transition">立即添加账号</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div v-for="acc in accounts" :key="acc.alias" class="themed-card p-5 flex flex-col justify-between">
+            <div>
+              <!-- 顶部角色身份与连接态 -->
+              <div class="flex items-start justify-between">
+                <div class="flex items-center space-x-3">
+                  <div class="h-11 w-11 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md text-base shrink-0">
+                    {{ (acc.telemetry?.nickname || acc.nickname || acc.alias || '仙').slice(0, 1) }}
+                  </div>
+                  <div>
+                    <h3 class="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 text-base">
+                      <span>{{ acc.alias }}</span>
+                      <span class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">#{{ acc.platform }}</span>
+                      <span v-if="acc.telemetry?.level" class="text-[11px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-bold">Lv.{{ acc.telemetry.level }}</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {{ acc.server }} · 角色: <strong class="text-slate-800 dark:text-slate-200 font-semibold">{{ acc.telemetry?.nickname || acc.nickname || acc.username }}</strong>
+                      <span v-if="acc.telemetry?.updated_at" class="ml-1 text-[10px] text-slate-400 font-mono">(更新: {{ formatTime(acc.telemetry.updated_at) }})</span>
+                    </p>
+                  </div>
+                </div>
+
+                <!-- 连接/避让状态胶囊 -->
+                <div>
+                  <span v-if="acc.evade_state === 'evading'" class="px-2.5 py-1 text-xs font-medium rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40 flex items-center gap-1.5 animate-pulse">
+                    <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                    防互踢避让中
+                  </span>
+                  <span v-else-if="acc.connection_status === 'connected'" class="px-2.5 py-1 text-xs font-medium rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5">
+                    <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    托管在线中
+                  </span>
+                  <span v-else class="px-2.5 py-1 text-xs font-medium rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 flex items-center gap-1.5">
+                    <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+                    离线 / 未连接
+                  </span>
+                </div>
+              </div>
+
+              <!-- 避让告警信息条 (仅在避让中显式触发) -->
+              <div v-if="acc.evade_state === 'evading'" class="mt-3.5 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                  <span>检测到玩家自登或顶号，已安全避让让位！</span>
+                </div>
+                <button @click="resumeHosting(acc)" class="px-2 py-0.5 bg-amber-500 text-slate-900 font-bold rounded text-[11px] shadow hover:bg-amber-400 transition shrink-0">
+                  打完了·恢复托管
+                </button>
+              </div>
+
+              <!-- 真实核心资产指标条 (只读遥测) -->
+              <div class="mt-4 grid grid-cols-3 gap-2 themed-subcard p-2.5 text-center text-xs">
+                <div>
+                  <p class="text-slate-500 dark:text-slate-400">铜钱</p>
+                  <p class="font-bold text-amber-600 dark:text-amber-300 font-mono mt-0.5">
+                    {{ formatCoins(acc.telemetry?.coins) }}
+                  </p>
+                </div>
+                <div class="border-x border-slate-200 dark:border-slate-800">
+                  <p class="text-slate-500 dark:text-slate-400">元宝</p>
+                  <p class="font-bold text-sky-600 dark:text-sky-400 font-mono mt-0.5">
+                    {{ acc.telemetry?.ingots !== undefined ? acc.telemetry.ingots.toLocaleString() : '-' }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-slate-500 dark:text-slate-400">声望</p>
+                  <p class="font-bold text-purple-600 dark:text-purple-300 font-mono mt-0.5">
+                    {{ formatCoins(acc.telemetry?.fame) }}
+                  </p>
+                </div>
+              </div>
+
+              <!-- 体力进度 -->
+              <div class="mt-3 space-y-1 text-xs">
+                <div class="flex justify-between text-slate-500 dark:text-slate-400">
+                  <span>体力储备: {{ acc.telemetry?.power !== undefined ? acc.telemetry.power : '--' }} / 200</span>
+                  <span class="text-slate-700 dark:text-slate-300 font-mono">{{ acc.telemetry?.power ? Math.min(100, Math.round((acc.telemetry.power / 200) * 100)) : 0 }}%</span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700/60 h-1.5 rounded-full overflow-hidden">
+                  <div class="bg-sky-500 h-full rounded-full transition-all duration-300" :style="{ width: (acc.telemetry?.power ? Math.min(100, Math.round((acc.telemetry.power / 200) * 100)) : 0) + '%' }"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 卡片操作行 -->
+            <div class="mt-5 pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs flex-wrap gap-2">
+              <label class="flex items-center cursor-pointer select-none">
+                <input type="checkbox" :checked="acc.hosting_enabled" @change="toggleHosting(acc, $event.target.checked)" class="sr-only peer">
+                <div class="w-8 h-4 bg-slate-300 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-emerald-500 relative"></div>
+                <span class="ml-2 text-slate-700 dark:text-slate-300 font-medium peer-checked:text-emerald-600 dark:peer-checked:text-emerald-400">长连接托管</span>
+              </label>
+
+              <div class="flex items-center space-x-1.5 flex-wrap">
+                <!-- 避让恢复按钮 -->
+                <button v-if="acc.evade_state === 'evading'" @click="resumeHosting(acc)" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded font-semibold transition active:scale-95 flex items-center gap-1 shadow-sm">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  打完了·恢复托管
+                </button>
+
+                <!-- 单跑日常按钮 -->
+                <button @click="triggerRoutine(acc)" class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded font-medium transition active:scale-95 flex items-center gap-1" title="立即异步触发该账号日常福利流水线">
+                  <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  单跑日常
+                </button>
+
+                <!-- 同步态势按钮 (带 loading 旋转与禁用) -->
+                <button @click="syncAccountTelemetry(acc)" :disabled="acc.syncing" class="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-600/20 hover:bg-indigo-100 dark:hover:bg-indigo-600/30 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 rounded font-medium transition active:scale-95 flex items-center gap-1 disabled:opacity-50" title="立即连接游戏网关拉取最新全景资产快照">
+                  <svg class="w-3.5 h-3.5" :class="acc.syncing ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                  <span>{{ acc.syncing ? '抓取中...' : '抓取态势' }}</span>
+                </button>
+
+                <!-- 详情设置按钮 -->
+                <button @click="openDrawer(acc.alias)" class="px-2.5 py-1 bg-sky-50 dark:bg-sky-600/20 hover:bg-sky-100 dark:hover:bg-sky-600/30 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-500/30 rounded font-medium transition active:scale-95">
+                  详情设置
+                </button>
+
+                <!-- 删除账号垃圾桶 -->
+                <button @click="deleteAccount(acc)" class="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition" title="删除账号并安全断开长连接">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- 底部实时 SSE 流式终端控制台 (极客全黑风格，专业高对比度) -->
+      <div class="themed-terminal rounded-xl overflow-hidden shadow-2xl">
+        <div class="bg-slate-950/80 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between flex-wrap gap-2">
+          <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-1.5">
+              <span class="w-3 h-3 rounded-full bg-red-500/80 inline-block"></span>
+              <span class="w-3 h-3 rounded-full bg-yellow-500/80 inline-block"></span>
+              <span class="w-3 h-3 rounded-full bg-green-500/80 inline-block"></span>
+            </div>
+            <span class="text-xs font-semibold text-slate-300 tracking-wider">实时执行日志 (SSE Stream)</span>
+
+            <!-- 动态生成的日志 Tab 过滤条 -->
+            <div class="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800 text-xs ml-2 sm:ml-4 max-w-md overflow-x-auto custom-scroll">
+              <button @click="currentLogAlias = 'all'" :class="currentLogAlias === 'all' ? 'bg-sky-600 text-white font-medium' : 'text-slate-400 hover:text-slate-200'" class="px-2.5 py-1 rounded transition shrink-0">
+                全部流水
+              </button>
+              <button v-for="a in accounts" :key="a.alias" @click="currentLogAlias = a.alias" :class="currentLogAlias === a.alias ? 'bg-sky-600 text-white font-medium' : 'text-slate-400 hover:text-slate-200'" class="px-2.5 py-1 rounded transition shrink-0">
+                {{ a.alias }}
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2 text-xs">
+            <button @click="simulateLogEntry" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
+              + 探针测试
+            </button>
+            <button @click="clearLogs" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
+              清屏
+            </button>
+          </div>
+        </div>
+
+        <!-- 日志输出视窗 -->
+        <div ref="consoleRef" class="p-4 h-56 overflow-y-auto font-mono text-xs text-slate-300 space-y-1.5 custom-scroll bg-slate-950/95 leading-relaxed">
+          <p v-for="(log, idx) in filteredLogs" :key="idx" :class="log.color">
+            {{ log.text }}
           </p>
         </div>
-
-        <div>
-          <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider mb-2">出战伙伴阵容 (Roles)</h3>
-          <div id="lineupGrid" class="grid grid-cols-2 gap-3">
-            <!-- 动态渲染伙伴列表 -->
-          </div>
-        </div>
       </div>
+    </main>
 
-      <!-- Tab 2: 小助手进度 (Assistant) -->
-      <div id="content-assistant" class="space-y-4 hidden">
-        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-semibold text-slate-300">今日活跃度宝箱进度</span>
-            <span id="livenessText" class="text-xs font-mono font-bold text-emerald-400">0 / 100 活跃点</span>
-          </div>
-          <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-            <div id="livenessBar" class="bg-gradient-to-r from-sky-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
-          </div>
-          <div id="assistantChestsContainer" class="grid grid-cols-5 gap-2 mt-3 pt-3 border-t border-slate-800/80">
-            <!-- 动态渲染 5 档活跃度宝箱 -->
-          </div>
-        </div>
-
-        <div id="assistantItemsContainer" class="space-y-2 text-xs">
-          <!-- 动态渲染日常小助手列表 -->
-        </div>
-      </div>
-
-      <!-- Tab 3: 35项日常独立配置 (Routine Switches) -->
-      <div id="content-routines" class="space-y-5 hidden">
-        <div class="bg-sky-500/10 border border-sky-500/30 rounded-xl p-3 text-xs text-sky-300">
-          💡 此处配置直接保存至 SQLite <code>data/config.sqlite</code>，当前修改仅对 <strong>主号</strong> 生效。
-        </div>
-
-        <!-- 基础福利分类 -->
-        <div class="space-y-2">
-          <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">每日零元宝福利 (100% 安全)</h4>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="money_tree" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">招财神符 (免费档)</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="worship" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">帮派祭神 (白檀香)</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="signin" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">每日签到与福利</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="touch_stone" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">点金石与仙道问灵</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 收益与家园分类 -->
-        <div class="space-y-2">
-          <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">资源与家园玩法</h4>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="farm" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">仙府药园 (浇水/除草)</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="peach_pet" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">摘仙桃挑战</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="lucky_star" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">吉星高照 (摇骰子)</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="fishing" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">深海捕鱼 (免费鱼叉)</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 战斗扫荡类 -->
-        <div class="space-y-2">
-          <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">战斗与天梯扫荡</h4>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="arena" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">竞技场挑战</span>
-            </label>
-            <label class="flex items-center space-x-2 bg-slate-950 p-2.5 rounded-lg border border-slate-800 cursor-pointer">
-              <input type="checkbox" checked data-routine="six_paths_tower" class="routine-checkbox rounded border-slate-700 text-sky-500 focus:ring-0">
-              <span class="text-slate-200">六道轮回塔爬塔</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- 元宝安全硬红线设置 -->
-        <div class="bg-red-500/10 border border-red-500/30 rounded-xl p-4 space-y-3">
-          <h4 class="text-xs font-bold text-red-400 flex items-center gap-1.5">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-            元宝安全警戒线 (Zero-Ingot Invariant)
-          </h4>
-          <div class="flex items-center space-x-3 text-xs">
-            <span class="text-slate-300">单日允许最大扣除元宝:</span>
-            <input type="number" id="allowedIngotsInput" value="0" min="0" class="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono text-center">
-            <span class="text-slate-400">(0 代表绝对零消耗红线，任何元宝包坚决前置熔断)</span>
-          </div>
-        </div>
-
-        <button onclick="saveRoutineConfig()" class="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold shadow-md transition active:scale-98">
-          保存账号独立日常配置到 SQLite
-        </button>
-      </div>
-
-      <!-- Tab 4: 元宝审计图表 (Audit) -->
-      <div id="content-audit" class="space-y-4 hidden">
-        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-          <p class="text-xs font-semibold text-slate-300 mb-3">近 7 日铜钱与元宝资产走势 (SQLite 仓储)</p>
-          <!-- 动态渲染 7 日资产走势柱状图 -->
-          <div id="assetHistoryContainer" class="h-32 w-full flex items-end space-x-3 pt-4 border-b border-slate-800">
-            <!-- 动态填充 -->
-          </div>
-          <div class="flex justify-between text-[11px] text-slate-400 mt-2">
-            <span id="assetHistoryStart">初始: -</span>
-            <span id="assetHistoryCurrent" class="text-amber-300 font-bold">当前: -</span>
-          </div>
-        </div>
-
-        <div>
-          <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">高危元宝消耗审计日志 (只读安全网)</h4>
-          <div id="auditLogsContainer" class="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs space-y-2">
-            <!-- 动态渲染元宝审计日志 -->
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- 抽屉底部操作条 -->
-    <div class="px-6 py-3.5 bg-slate-950 border-t border-slate-800 flex items-center justify-end">
-      <button onclick="closeDrawer()" class="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition">
-        关闭
-      </button>
-    </div>
-  </aside>
-
-  <!-- 添加账号 Modal -->
-  <div id="accountModal" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 class="font-bold text-slate-100 text-base">添加新账号</h3>
-        <button onclick="closeAccountModal()" class="text-slate-400 hover:text-slate-200">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
-      </div>
-
-      <div class="space-y-3 text-xs">
-        <div>
-          <label class="block text-slate-300 mb-1 font-medium">账号别名 (Alias)</label>
-          <input type="text" placeholder="例如: 挖矿小号4" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
-        </div>
-
-        <div>
-          <label class="block text-slate-300 mb-1 font-medium">联运平台类型</label>
-          <select class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
-            <option value="fengwanyx">疯玩游戏 (fengwanyx) - 自动网页鉴权</option>
-            <option value="static">静态直连 (static) - IP/Port 直连</option>
-          </select>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="block text-slate-300 mb-1 font-medium">平台用户名</label>
-            <input type="text" placeholder="用户名/手机号" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
+    <!-- 账号详情与设置抽屉 (Slide Drawer - 双模与高质感游戏资产) -->
+    <div v-if="drawer.show" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 transition-opacity" @click="closeDrawer"></div>
+    <aside :class="drawer.show ? 'translate-x-0' : 'translate-x-full'" class="fixed top-0 right-0 bottom-0 w-full max-w-2xl bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 z-50 shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out">
+      
+      <!-- 抽屉头部 -->
+      <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950 transition-colors">
+        <div class="flex items-center space-x-3">
+          <div class="h-9 w-9 rounded-lg bg-sky-500/20 text-sky-600 dark:text-sky-400 border border-sky-500/30 flex items-center justify-center font-bold text-sm">
+            {{ (drawer.telemetry?.nickname || drawer.alias || '仙').slice(0, 1) }}
           </div>
           <div>
-            <label class="block text-slate-300 mb-1 font-medium">登录密码</label>
-            <input type="password" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
+            <h2 class="font-bold text-slate-800 dark:text-slate-100 text-base">{{ drawer.alias }} · 详情与设置</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              <span v-if="drawer.loading">正在从后端 SQLite 同步最新态势快照...</span>
+              <span v-else>{{ drawer.telemetry?.town_name || '主城' }} · 角色: {{ drawer.telemetry?.nickname }} (Lv {{ drawer.telemetry?.level }} · VIP {{ drawer.telemetry?.vip_level }})</span>
+            </p>
           </div>
         </div>
-
-        <div>
-          <label class="block text-slate-300 mb-1 font-medium">游戏区服 (如 s138 / 138)</label>
-          <input type="text" placeholder="138" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500">
+        <div class="flex items-center space-x-2">
+          <button @click="syncDrawerTelemetry" :disabled="drawer.loading" class="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-600/20 text-indigo-600 dark:text-indigo-300 rounded text-xs font-medium border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-100 transition flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" :class="drawer.loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            刷新态势
+          </button>
+          <button @click="closeDrawer" class="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
         </div>
       </div>
 
-      <div class="pt-3 border-t border-slate-800 flex justify-end space-x-2 text-xs">
-        <button onclick="closeAccountModal()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg">取消</button>
-        <button onclick="saveNewAccount()" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-medium rounded-lg shadow-sm">保存到 SQLite</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Web Token 设置 Modal -->
-  <div id="tokenModal" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm p-6 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-        <h3 class="font-bold text-slate-100 text-base">Web 访问口令设置</h3>
-        <button onclick="closeTokenModal()" class="text-slate-400 hover:text-slate-200">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-        </button>
+      <!-- 抽屉 Tab 导航 -->
+      <div class="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50/50 dark:bg-slate-900/90 text-xs">
+        <button @click="drawer.tab = 'assets'" :class="drawer.tab === 'assets' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">资产态势</button>
+        <button @click="drawer.tab = 'assistant'" :class="drawer.tab === 'assistant' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">小助手进度</button>
+        <button @click="drawer.tab = 'routines'" :class="drawer.tab === 'routines' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">35项日常独立配置</button>
+        <button @click="drawer.tab = 'audit'" :class="drawer.tab === 'audit' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">元宝审计图表</button>
       </div>
 
-      <div class="space-y-3 text-xs">
-        <p class="text-slate-400">用于局域网或内网穿透暴露时的轻量口令验证，留空则免密。</p>
-        <div>
-          <label class="block text-slate-300 mb-1 font-medium">访问 Token / Passphrase</label>
-          <input type="password" value="sxd-admin-2026" id="webTokenInput" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-sky-500 font-mono">
-        </div>
-      </div>
-
-      <div class="pt-3 border-t border-slate-800 flex justify-end space-x-2 text-xs">
-        <button onclick="closeTokenModal()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg">取消</button>
-        <button onclick="saveWebToken()" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-medium rounded-lg">更新口令</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- 纯前端交互逻辑 -->
-  <script>
-    let currentDrawerAlias = '主号';
-    let currentLogAlias = 'all';
-    let allLogs = [];
-    let eventSource = null;
-
-    function getAuthHeaders(extra = {}) {
-      const token = localStorage.getItem('sxd_web_token') || '';
-      const headers = { ...extra };
-      if (token) headers['Authorization'] = 'Bearer ' + token;
-      return headers;
-    }
-
-    function formatCoins(n) {
-      if (!n || isNaN(n)) return '0';
-      if (n >= 100000000) return (n / 100000000).toFixed(2) + ' 亿';
-      if (n >= 10000) return (n / 10000).toFixed(0) + ' 万';
-      return n.toLocaleString();
-    }
-
-    // 抽屉控制与多源数据动态加载
-    async function openDrawer(alias) {
-      currentDrawerAlias = alias;
-      const titleElem = document.getElementById('drawerTitle');
-      const subtitleElem = document.getElementById('drawerSubtitle');
-      if (titleElem) titleElem.innerText = alias + ' · 详情与设置';
-      if (subtitleElem) subtitleElem.innerText = '正在从后端 SQLite 实时同步最新态势快照...';
-      document.getElementById('drawerOverlay').classList.remove('hidden');
-      document.getElementById('detailDrawer').classList.remove('translate-x-full');
-
-      await Promise.allSettled([
-        loadRoutineConfig(alias),
-        loadTelemetry(alias),
-        loadAssistant(alias),
-        loadAuditLogs(alias),
-      ]);
-    }
-
-    async function loadTelemetry(alias) {
-      try {
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/telemetry`, {
-          headers: getAuthHeaders(),
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-
-        // 1. 抽屉标题与元信息更新
-        const titleElem = document.getElementById('drawerTitle');
-        const subtitleElem = document.getElementById('drawerSubtitle');
-        const avatarElem = document.getElementById('drawerAvatar');
-        if (titleElem) titleElem.innerText = `${alias} · 详情与设置`;
-        if (subtitleElem) {
-          subtitleElem.innerText = `${data.town_name || '主城'} · 角色: ${data.nickname} (Lv ${data.level} · VIP ${data.vip_level}) · 铜钱: ${formatCoins(data.coins)} · 元宝: ${data.ingots}`;
-        }
-        if (avatarElem) {
-          avatarElem.innerText = (data.nickname || alias || '仙').slice(0, 1);
-        }
-
-        // 2. 背包 100 格快照 (只读)
-        const gridElem = document.getElementById('inventoryGrid');
-        const loadElem = document.getElementById('inventoryLoadText');
-        if (gridElem) {
-          gridElem.innerHTML = '';
-          const itemsMap = {};
-          (data.inventory || []).forEach(it => {
-            itemsMap[it.grid_id] = it;
-          });
-
-          for (let i = 0; i < 100; i++) {
-            const it = itemsMap[i];
-            const cell = document.createElement('div');
-            if (it) {
-              let borderClass = 'border-slate-700 text-slate-300';
-              let nameColor = 'text-slate-200';
-              if (it.quality === 'gold') {
-                borderClass = 'border-amber-500/80 bg-slate-900 text-amber-400';
-                nameColor = 'text-amber-400';
-              } else if (it.quality === 'purple') {
-                borderClass = 'border-purple-500/80 bg-slate-900 text-purple-400';
-                nameColor = 'text-purple-400';
-              } else if (it.quality === 'blue') {
-                borderClass = 'border-sky-500/80 bg-slate-900 text-sky-400';
-                nameColor = 'text-sky-400';
-              }
-              cell.className = `h-12 bg-slate-900 border ${borderClass} rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell p-0.5 transition shadow-sm`;
-              cell.title = `【${it.name}】(${it.type_desc || '道具'}) [${it.quality.toUpperCase()}] x${it.count}\n只读快照 · 不会触发误变卖`;
-              cell.innerHTML = `
-                <span class="${nameColor} text-[10px] font-bold truncate max-w-full px-0.5">${it.name.length > 4 ? it.name.slice(0, 3) + '..' : it.name}</span>
-                <span class="text-[9px] text-slate-400 font-mono">x${it.count}</span>
-              `;
-            } else {
-              cell.className = 'h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-[10px] select-none';
-              cell.innerText = '空';
-            }
-            gridElem.appendChild(cell);
-          }
-        }
-        if (loadElem) {
-          loadElem.innerText = `当前背包负荷: ${(data.inventory || []).length} / 100`;
-        }
-
-        // 3. 伙伴阵容列表
-        const lineupElem = document.getElementById('lineupGrid');
-        if (lineupElem) {
-          lineupElem.innerHTML = '';
-          const roles = data.roles || [];
-          roles.forEach(r => {
-            const card = document.createElement('div');
-            card.className = 'bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center space-x-3';
-            const firstLetter = (r.name || '侠').slice(0, 1);
-            card.innerHTML = `
-              <div class="w-9 h-9 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center font-bold text-xs shrink-0">
-                ${firstLetter}
+      <!-- 抽屉内容视窗 -->
+      <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scroll">
+        
+        <!-- Tab 1: 全景资产态势与只读背包快照 (Assets) -->
+        <div v-show="drawer.tab === 'assets'" class="space-y-5">
+          <!-- 核心资产大卡片 -->
+          <div class="themed-subcard p-4 space-y-3">
+            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span>角色核心资源画像</span>
+              <span class="text-[11px] text-slate-400 font-mono">SQLite 独立缓存</span>
+            </h4>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div class="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                <p class="text-xs text-slate-400">铜钱储备</p>
+                <p class="text-base font-bold text-amber-500 font-mono mt-0.5">{{ formatCoins(drawer.telemetry?.coins) }}</p>
               </div>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center justify-between">
-                  <p class="text-xs font-bold text-slate-200 truncate">${r.name} (${r.role_job || '武将'})</p>
-                  <span class="text-[10px] px-1.5 py-0.2 rounded ${r.is_deployed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}">${r.is_deployed ? '出战' : '候补'}</span>
-                </div>
-                <p class="text-[11px] text-slate-400 mt-0.5">Lv ${r.level} · 气血: ${(r.health || 0).toLocaleString()} / ${(r.max_health || 0).toLocaleString()}</p>
+              <div class="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                <p class="text-xs text-slate-400">元宝总数</p>
+                <p class="text-base font-bold text-sky-500 font-mono mt-0.5">{{ drawer.telemetry?.ingots?.toLocaleString() ?? '-' }}</p>
               </div>
-            `;
-            lineupElem.appendChild(card);
-          });
-        }
-      } catch (err) {
-        console.error("加载全景遥测数据失败:", err);
-      }
-    }
-
-    async function loadAssistant(alias) {
-      try {
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/assistant`, {
-          headers: getAuthHeaders(),
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-
-        // 1. 活跃度与进度条
-        const livenessElem = document.getElementById('livenessText');
-        const livenessBar = document.getElementById('livenessBar');
-        const cur = data.current_liveness || 0;
-        const max = data.max_liveness || 100;
-        const pct = Math.min(100, Math.round((cur / max) * 100));
-        if (livenessElem) livenessElem.innerText = `${cur} / ${max} 活跃点`;
-        if (livenessBar) livenessBar.style.width = `${pct}%`;
-
-        // 2. 活跃度宝箱
-        const chestsElem = document.getElementById('assistantChestsContainer');
-        if (chestsElem) {
-          chestsElem.innerHTML = '';
-          (data.boxes || []).forEach(b => {
-            const boxDiv = document.createElement('div');
-            let badgeBg = 'bg-slate-800 text-slate-400 border-slate-700';
-            if (b.status === 1) badgeBg = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
-            else if (b.status === 0) badgeBg = 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse';
-            boxDiv.className = `p-2 bg-slate-900/80 rounded border ${badgeBg} flex flex-col items-center justify-center text-center`;
-            boxDiv.innerHTML = `
-              <span class="text-xs font-bold font-mono">${b.required_liveness}点</span>
-              <span class="text-[10px] mt-0.5">${b.status_desc || (b.status === 1 ? '已领取' : (b.status === 0 ? '可领取' : '未达标'))}</span>
-            `;
-            chestsElem.appendChild(boxDiv);
-          });
-        }
-
-        // 3. 小助手日常列表
-        const itemsElem = document.getElementById('assistantItemsContainer');
-        if (itemsElem) {
-          itemsElem.innerHTML = '';
-          (data.items || []).forEach(it => {
-            const itemRow = document.createElement('div');
-            itemRow.className = 'p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between';
-            itemRow.innerHTML = `
-              <div>
-                <p class="font-bold text-slate-200">${it.name}</p>
-                <p class="text-slate-400 text-[11px]">完成进度: ${it.completed_count} / ${it.total_quota}</p>
+              <div class="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                <p class="text-xs text-slate-400">声望数值</p>
+                <p class="text-base font-bold text-purple-500 font-mono mt-0.5">{{ formatCoins(drawer.telemetry?.fame) }}</p>
               </div>
-              <span class="px-2 py-0.5 rounded text-xs ${it.is_completed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">
-                ${it.is_completed ? '已达成' : '待完成'}
-              </span>
-            `;
-            itemsElem.appendChild(itemRow);
-          });
-        }
-      } catch (err) {
-        console.error("加载小助手数据失败:", err);
-      }
-    }
-
-    async function loadAuditLogs(alias) {
-      try {
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/audit-logs`, {
-          headers: getAuthHeaders(),
-        });
-        if (!resp.ok) return;
-        const data = await resp.json();
-
-        // 1. 7 日资产走势柱状图
-        const chartElem = document.getElementById('assetHistoryContainer');
-        const startElem = document.getElementById('assetHistoryStart');
-        const currElem = document.getElementById('assetHistoryCurrent');
-        const history = data.asset_history || [];
-        if (chartElem && history.length > 0) {
-          chartElem.innerHTML = '';
-          const maxCoins = Math.max(...history.map(h => h.coins), 1);
-          history.forEach((h, idx) => {
-            const isToday = idx === history.length - 1;
-            const barPct = Math.max(15, Math.round((h.coins / maxCoins) * 100));
-            const barDiv = document.createElement('div');
-            barDiv.className = 'flex-1 flex flex-col items-center gap-1';
-            const colorClass = isToday ? 'bg-sky-500 shadow-md shadow-sky-500/40' : 'bg-amber-500/80';
-            barDiv.innerHTML = `
-              <div class="w-full ${colorClass} rounded-t transition-all duration-300" style="height: ${barPct}%" title="${h.date}: 铜钱 ${formatCoins(h.coins)}, 元宝 ${h.ingots}"></div>
-              <span class="text-[10px] ${isToday ? 'text-sky-400 font-bold' : 'text-slate-400'}">${isToday ? '今日' : h.date}</span>
-            `;
-            chartElem.appendChild(barDiv);
-          });
-
-          if (startElem) startElem.innerText = `初始: ${formatCoins(history[0].coins)}`;
-          if (currElem) currElem.innerText = `当前: ${formatCoins(history[history.length - 1].coins)}`;
-        }
-
-        // 2. 元宝审计日志清单
-        const logsElem = document.getElementById('auditLogsContainer');
-        if (logsElem) {
-          logsElem.innerHTML = `
-            <div class="flex items-center justify-between text-slate-400 text-[11px] pb-1 border-b border-slate-800">
-              <span class="w-24">时间</span>
-              <span class="flex-1 px-2">动作/行为</span>
-              <span class="w-16 text-center">元宝上限</span>
-              <span class="w-20 text-right">风控状态</span>
+              <div class="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                <p class="text-xs text-slate-400">体力状态</p>
+                <p class="text-base font-bold text-emerald-500 font-mono mt-0.5">{{ drawer.telemetry?.power ?? '--' }}/200</p>
+              </div>
             </div>
-          `;
-          const records = data.audit_records || [];
-          if (records.length === 0) {
-            const emptyDiv = document.createElement('div');
-            emptyDiv.className = 'text-center py-4 text-slate-500 text-xs';
-            emptyDiv.innerText = '暂无元宝扣减审计记录 (已执行全量零元宝安全白名单策略)';
-            logsElem.appendChild(emptyDiv);
+          </div>
+
+          <!-- 参战伙伴阵容 -->
+          <div class="space-y-2">
+            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+              <span>当前参战伙伴阵容 (Mod 5)</span>
+              <span class="text-[11px] text-slate-400">共 {{ (drawer.telemetry?.roles || []).length }} 位角色出战</span>
+            </h4>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div v-for="r in (drawer.telemetry?.roles || [])" :key="r.role_id" class="p-3 themed-subcard flex items-center justify-between">
+                <div>
+                  <p class="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    <span>{{ r.name }}</span>
+                    <span class="text-[10px] px-1 rounded bg-sky-500/15 text-sky-600 dark:text-sky-400">{{ r.role_job || '武圣' }}</span>
+                  </p>
+                  <p class="text-slate-400 text-[11px] mt-0.5">Lv.{{ r.level }} · 境界: {{ r.realm_level || 1 }} 阶</p>
+                </div>
+                <span class="text-emerald-500 text-[11px] font-medium">已上阵</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 100 格只读背包快照 -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <span>只读 100 格道具快照 (Mod 2)</span>
+                <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">安全只读 · 杜绝误卖</span>
+              </h4>
+              <span class="text-[11px] text-slate-400">已用: {{ (drawer.telemetry?.inventory || []).length }} / 100 格</span>
+            </div>
+
+            <!-- 10x10 格子矩阵 -->
+            <div class="grid grid-cols-10 gap-1.5 p-3 themed-subcard rounded-xl">
+              <div v-for="(cell, idx) in drawerInventory100" :key="idx" :class="cell ? cell.cellClass : 'h-12 bg-slate-100 dark:bg-slate-900/40 border border-dashed border-slate-300 dark:border-slate-800/80 rounded flex items-center justify-center text-[10px] text-slate-400/40 select-none'" :title="cell ? cell.title : `空储格 #${idx}`">
+                <template v-if="cell">
+                  <span class="text-[10px] text-center font-medium leading-tight px-0.5 truncate w-full" :class="cell.nameColor">{{ cell.shortName }}</span>
+                  <span class="text-[9px] font-mono text-slate-400 absolute bottom-0.5 right-1">x{{ cell.count }}</span>
+                </template>
+                <template v-else>
+                  <span>{{ idx + 1 }}</span>
+                </template>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: 小助手进度 (Assistant) -->
+        <div v-show="drawer.tab === 'assistant'" class="space-y-4">
+          <div class="themed-subcard p-4">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-semibold text-slate-700 dark:text-slate-300">今日活跃度宝箱进度</span>
+              <span class="text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400">{{ drawer.assistant?.current_liveness || 0 }} / {{ drawer.assistant?.max_liveness || 100 }} 活跃点</span>
+            </div>
+            <div class="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div class="bg-gradient-to-r from-sky-500 to-emerald-400 h-full rounded-full transition-all duration-300" :style="{ width: Math.min(100, Math.round(((drawer.assistant?.current_liveness || 0) / (drawer.assistant?.max_liveness || 100)) * 100)) + '%' }"></div>
+            </div>
+            
+            <!-- 5 档活跃度宝箱 -->
+            <div class="grid grid-cols-5 gap-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800/80">
+              <div v-for="b in (drawer.assistant?.boxes || [])" :key="b.required_liveness" class="p-2 bg-white dark:bg-slate-900 rounded border flex flex-col items-center justify-center text-center shadow-sm" :class="b.status === 4 ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400' : (b.status === 0 ? 'border-amber-500/50 text-amber-600 dark:text-amber-300 animate-pulse' : 'border-slate-200 dark:border-slate-800 text-slate-400')">
+                <span class="text-xs font-bold font-mono">{{ b.required_liveness }}点</span>
+                <span class="text-[10px] mt-0.5">{{ b.status_desc || (b.status === 4 ? '已领取' : (b.status === 0 ? '可领取' : '未达标')) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 日常项列表 -->
+          <div class="space-y-2 text-xs">
+            <div v-for="it in (drawer.assistant?.items || [])" :key="it.name" class="p-3 themed-subcard flex items-center justify-between">
+              <div>
+                <p class="font-bold text-slate-800 dark:text-slate-200">{{ it.name }}</p>
+                <p class="text-slate-500 dark:text-slate-400 text-[11px]">完成进度: {{ it.completed_count }} / {{ it.total_quota }}</p>
+              </div>
+              <span class="px-2 py-0.5 rounded text-xs" :class="it.is_completed ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'">
+                {{ it.is_completed ? '已达成' : '待完成' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: 35项日常独立配置 (Routine Switches) -->
+        <div v-show="drawer.tab === 'routines'" class="space-y-5">
+          <div class="bg-sky-50 dark:bg-sky-500/10 border border-sky-200 dark:border-sky-500/30 rounded-xl p-3 text-xs text-sky-700 dark:text-sky-300">
+            💡 此处配置保存至 SQLite <code>data/config.sqlite</code>，当前修改仅对 <strong>{{ drawer.alias }}</strong> 生效。
+          </div>
+
+          <!-- 动态分组渲染 35 项日常开关 -->
+          <div v-for="grp in routineGroups" :key="grp.title" class="space-y-2">
+            <h4 class="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">{{ grp.title }}</h4>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <label v-for="r in grp.items" :key="r.id" class="flex items-center space-x-2 themed-subcard p-2.5 cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 transition">
+                <input type="checkbox" :value="r.id" v-model="drawer.routineConfig.enabled_routines" class="rounded border-slate-300 dark:border-slate-700 text-sky-600 focus:ring-0">
+                <span class="text-slate-700 dark:text-slate-200">{{ r.name }}</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 元宝安全硬红线设置 -->
+          <div class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/30 rounded-xl p-4 space-y-3">
+            <h4 class="text-xs font-bold text-red-600 dark:text-red-400 flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              元宝安全警戒线 (Zero-Ingot Invariant)
+            </h4>
+            <div class="flex items-center space-x-3 text-xs">
+              <span class="text-slate-700 dark:text-slate-300">单日允许最大扣除元宝:</span>
+              <input type="number" v-model.number="drawer.routineConfig.allowed_ingots" min="0" class="w-20 themed-input rounded px-2 py-1 text-center font-mono focus:border-sky-500">
+              <span class="text-slate-500 dark:text-slate-400">(0 代表绝对零消耗红线，任何元宝包坚决前置熔断)</span>
+            </div>
+          </div>
+
+          <button @click="saveRoutineConfig" class="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold shadow-md transition active:scale-98">
+            保存账号独立日常配置到 SQLite
+          </button>
+        </div>
+
+        <!-- Tab 4: 元宝审计图表 (Audit) -->
+        <div v-show="drawer.tab === 'audit'" class="space-y-4">
+          <div class="themed-subcard p-4">
+            <p class="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-3">近 7 日铜钱与元宝资产走势 (SQLite 仓储)</p>
+            <div class="h-32 w-full flex items-end space-x-3 pt-4 border-b border-slate-200 dark:border-slate-800">
+              <div v-for="(h, idx) in (drawer.auditLogs?.asset_history || [])" :key="idx" class="flex-1 flex flex-col items-center gap-1">
+                <div class="w-full rounded-t transition-all duration-300" :class="idx === (drawer.auditLogs.asset_history.length - 1) ? 'bg-sky-500 shadow-md shadow-sky-500/40' : 'bg-amber-500/80'" :style="{ height: getAssetBarHeight(h.coins) + '%' }" :title="`${h.date}: 铜钱 ${formatCoins(h.coins)}, 元宝 ${h.ingots}`"></div>
+                <span class="text-[10px]" :class="idx === (drawer.auditLogs.asset_history.length - 1) ? 'text-sky-600 dark:text-sky-400 font-bold' : 'text-slate-500 dark:text-slate-400'">{{ idx === (drawer.auditLogs.asset_history.length - 1) ? '今日' : h.date }}</span>
+              </div>
+            </div>
+            <div class="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-2">
+              <span>初始: {{ formatCoins(drawer.auditLogs?.asset_history?.[0]?.coins) }}</span>
+              <span class="text-amber-600 dark:text-amber-300 font-bold">当前: {{ formatCoins(drawer.auditLogs?.asset_history?.[drawer.auditLogs?.asset_history?.length - 1]?.coins) }}</span>
+            </div>
+          </div>
+
+          <div>
+            <h4 class="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">高危元宝消耗审计日志 (只读安全网)</h4>
+            <div class="p-3 themed-subcard text-xs space-y-2">
+              <div class="flex items-center justify-between text-slate-400 text-[11px] pb-1 border-b border-slate-200 dark:border-slate-800">
+                <span class="w-24">时间</span>
+                <span class="flex-1 px-2">动作/行为</span>
+                <span class="w-16 text-center">元宝上限</span>
+                <span class="w-20 text-right">风控状态</span>
+              </div>
+              <div v-if="!drawer.auditLogs?.audit_records?.length" class="text-center py-4 text-slate-400 dark:text-slate-500 text-xs">
+                暂无元宝扣减审计记录 (已执行全量零元宝安全白名单策略)
+              </div>
+              <div v-else v-for="(r, idx) in drawer.auditLogs.audit_records" :key="idx" class="flex items-center justify-between text-slate-700 dark:text-slate-300 py-1 border-b border-slate-200 dark:border-slate-800">
+                <span class="w-24 text-slate-400 dark:text-slate-500 font-mono text-[10px]">{{ formatTime(r.created_at) }}</span>
+                <span class="flex-1 px-2 text-slate-800 dark:text-slate-200 truncate" :title="r.details || ''">{{ r.action_name }}</span>
+                <span class="w-16 text-center text-amber-600 dark:text-amber-400 font-mono">{{ r.allow_ingot }} 元宝</span>
+                <span class="w-20 text-right text-[11px]" :class="r.allow_ingot === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">{{ r.allow_ingot === 0 ? '零元宝拦截' : '配额允许' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 抽屉底部操作条 -->
+      <div class="px-6 py-3.5 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end transition-colors">
+        <button @click="closeDrawer" class="px-4 py-1.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-medium transition">
+          关闭
+        </button>
+      </div>
+    </aside>
+
+    <!-- 添加账号 Modal (含测试登录与多平台适配) -->
+    <div v-if="accModal.show" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="themed-card w-full max-w-md p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div class="flex items-center space-x-2">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-base">添加新账号</h3>
+            <span class="text-[11px] px-2 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium">前置防误录强校验</span>
+          </div>
+          <button @click="accModal.show = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <!-- 账号别名 -->
+          <div>
+            <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">账号别名 (Alias)</label>
+            <input type="text" v-model="accModal.form.alias" placeholder="例如: 主号 / 打工小号1" class="w-full themed-input rounded-lg px-3 py-2">
+          </div>
+
+          <!-- 平台选择 -->
+          <div>
+            <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">联运平台类型</label>
+            <select v-model="accModal.form.platform" @change="onPlatformChange" class="w-full themed-input rounded-lg px-3 py-2">
+              <option value="fengwanyx">疯玩游戏 (fengwanyx) - 自动网页鉴权</option>
+              <option value="xd">心动官方微端 (xd.com) - 官方微端鉴权</option>
+              <option value="static">静态直连 (static) - IP/Port 直连</option>
+            </select>
+          </div>
+
+          <!-- 用户名与密码 -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">平台用户名</label>
+              <input type="text" v-model="accModal.form.username" placeholder="用户名/手机号" class="w-full themed-input rounded-lg px-3 py-2">
+            </div>
+            <div>
+              <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">登录密码</label>
+              <input type="password" v-model="accModal.form.password" placeholder="••••••••" class="w-full themed-input rounded-lg px-3 py-2">
+            </div>
+          </div>
+
+          <!-- 区服输入 -->
+          <div>
+            <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">
+              游戏区服标识
+              <span class="text-slate-400 font-normal">({{ accModal.form.platform === 'xd' ? '心动官服格式如: S3542 或 3542' : '渠道服格式如: s813 或 813' }})</span>
+            </label>
+            <input type="text" v-model="accModal.form.server" :placeholder="accModal.form.platform === 'xd' ? 'S3542' : 's813'" class="w-full themed-input rounded-lg px-3 py-2 font-mono">
+          </div>
+
+          <!-- 静态直连专有配置 -->
+          <div v-if="accModal.form.platform === 'static'" class="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">网关主机 (Host)</label>
+              <input type="text" v-model="accModal.form.server_host" placeholder="127.0.0.1" class="w-full themed-input rounded-lg px-3 py-2 font-mono">
+            </div>
+            <div>
+              <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">网关端口 (Port)</label>
+              <input type="number" v-model.number="accModal.form.server_port" placeholder="8475" class="w-full themed-input rounded-lg px-3 py-2 font-mono">
+            </div>
+          </div>
+
+          <!-- 测试登录反馈区域 -->
+          <div v-if="accModal.testResult" class="p-3 rounded-lg border text-xs" :class="accModal.testResult.success ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-300 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300' : 'bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30 text-red-700 dark:text-red-300'">
+            <div class="flex items-center gap-1.5 font-bold">
+              <span>{{ accModal.testResult.success ? '✓ 登录验证通过！' : '✕ 登录测试失败' }}</span>
+            </div>
+            <p class="mt-1 text-[11px]" :class="accModal.testResult.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'">
+              {{ accModal.testResult.message }}
+            </p>
+            <div v-if="accModal.testResult.success" class="mt-2 pt-2 border-t border-emerald-200 dark:border-emerald-500/20 text-[10px] space-y-0.5 text-slate-600 dark:text-slate-300">
+              <p>角色主体: <strong class="text-slate-900 dark:text-white">{{ accModal.testResult.nickname || accModal.testResult.player_name }}</strong> (UID: {{ accModal.testResult.player_name }})</p>
+              <p>底层网关: <span class="font-mono text-emerald-600 dark:text-emerald-400">{{ accModal.testResult.server_host }}:{{ accModal.testResult.server_port }}</span></p>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+          <!-- 测试登录按钮 -->
+          <button @click="testAccountLogin" :disabled="accModal.testing" class="px-3.5 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 rounded-lg font-medium transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50">
+            <svg v-if="accModal.testing" class="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
+            <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            <span>{{ accModal.testing ? '正在测试...' : '测试登录' }}</span>
+          </button>
+
+          <div class="flex items-center space-x-2">
+            <button @click="accModal.show = false" class="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg">取消</button>
+            <button @click="saveNewAccount" :disabled="accModal.testing" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-medium rounded-lg shadow-sm active:scale-95 disabled:opacity-50">
+              保存到 SQLite
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Web Token 设置 Modal -->
+    <div v-if="tokenModal.show" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="themed-card w-full max-w-sm p-6 space-y-4">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <h3 class="font-bold text-slate-800 dark:text-slate-100 text-base">Web 访问口令设置</h3>
+          <button @click="tokenModal.show = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs">
+          <p class="text-slate-500 dark:text-slate-400">用于局域网或内网穿透暴露时的轻量口令验证，留空则免密。</p>
+          <div>
+            <label class="block text-slate-700 dark:text-slate-300 mb-1 font-medium">访问 Token / Passphrase</label>
+            <input type="password" v-model="tokenModal.token" placeholder="留空免密" class="w-full themed-input rounded-lg px-3 py-2 font-mono">
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end space-x-2 text-xs">
+          <button @click="tokenModal.show = false" class="px-3.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg">取消</button>
+          <button @click="saveWebToken" class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-medium rounded-lg">更新口令</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Vue 3 + Element Plus 核心前端逻辑 -->
+  <script>
+    const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+
+    // 35 项标准自动化与日常任务分组名录
+    const ROUTINE_GROUPS = [
+      {
+        title: "每日零元宝福利 (100% 安全)",
+        items: [
+          { id: "money_tree", name: "招财神符 (免费档)" },
+          { id: "worship", name: "帮派祭神 (白檀香)" },
+          { id: "signin", name: "每日签到与福利" },
+          { id: "touch_stone", name: "点金石与仙道问灵" },
+          { id: "online_gift", name: "在线礼包与补偿" },
+          { id: "email", name: "系统邮件一键领取" },
+          { id: "weekend", name: "周末狂欢大礼包" },
+        ]
+      },
+      {
+        title: "资源与家园玩法",
+        items: [
+          { id: "farm", name: "仙府药园 (浇水/除草/收获)" },
+          { id: "peach_pet", name: "摘仙桃与神龙拜祭" },
+          { id: "lucky_star", name: "吉星高照 (摇骰子)" },
+          { id: "fishing", name: "深海捕鱼 (免费鱼叉)" },
+          { id: "home", name: "仙府家园居室奖励" },
+        ]
+      },
+      {
+        title: "战力与养成体系",
+        items: [
+          { id: "fate", name: "猎命与灰命变卖" },
+          { id: "take_bible", name: "西天取经 (护送/打劫)" },
+          { id: "traders", name: "喜从天降/通商买卖" },
+          { id: "nimbus", name: "天地聚灵 (灵气抽取)" },
+          { id: "five_elements", name: "五行整理与晶石背包" },
+          { id: "link_fate", name: "缘魂宝箱批量开启" },
+          { id: "item_clean", name: "杂物变卖与背包整理" },
+        ]
+      },
+      {
+        title: "战斗与天梯扫荡",
+        items: [
+          { id: "arena", name: "竞技场天梯挑战" },
+          { id: "hero_mission", name: "精英副本快速扫荡" },
+          { id: "normal_mission", name: "普通副本体力扫荡" },
+          { id: "six_paths_tower", name: "六道轮回塔爬塔" },
+          { id: "seal_satan", name: "七星封魔组队试炼" },
+          { id: "hunt_demon", name: "每日免费猎妖" },
+        ]
+      },
+      {
+        title: "帮派与限时活动",
+        items: [
+          { id: "faction_roll", name: "帮派博饼/吉星掷骰" },
+          { id: "union_worship", name: "仙盟白檀香敬香" },
+          { id: "memory_zone", name: "回忆之境通关奖励" },
+          { id: "five_fu", name: "五福临门节庆礼包" },
+          { id: "assistant", name: "小助手宝箱一键激活" },
+        ]
+      }
+    ];
+
+    const app = createApp({
+      setup() {
+        const isDark = ref(localStorage.getItem('sxd_theme') !== 'light'); // 默认深色
+        const accounts = ref([]);
+        const loadingAccounts = ref(false);
+        const syncingAll = ref(false);
+        const currentLogAlias = ref('all');
+        const logs = ref([]);
+        const consoleRef = ref(null);
+        let eventSource = null;
+
+        // 添加账号弹窗状态
+        const accModal = reactive({
+          show: false,
+          testing: false,
+          testResult: null,
+          form: {
+            alias: '',
+            platform: 'fengwanyx',
+            username: '',
+            password: '',
+            server: 's813',
+            server_host: '',
+            server_port: 8475,
+            server_id: 25268,
+          }
+        });
+
+        // 口令弹窗状态
+        const tokenModal = reactive({
+          show: false,
+          token: localStorage.getItem('sxd_web_token') || '',
+        });
+
+        // 详情设置抽屉状态
+        const drawer = reactive({
+          show: false,
+          alias: '',
+          tab: 'assets',
+          loading: false,
+          telemetry: null,
+          assistant: null,
+          routineConfig: {
+            allowed_ingots: 0,
+            enabled_routines: [],
+          },
+          auditLogs: null,
+        });
+
+        // 明暗双模主题切换
+        function toggleTheme() {
+          isDark.value = !isDark.value;
+          applyTheme();
+        }
+
+        function applyTheme() {
+          const root = document.documentElement;
+          if (isDark.value) {
+            root.classList.add('dark');
+            localStorage.setItem('sxd_theme', 'dark');
+            showNotify('主题切换', '已切换至暗黑极客模式', 'info');
           } else {
-            records.forEach(r => {
-              const row = document.createElement('div');
-              row.className = 'flex items-center justify-between text-slate-300 py-1 border-b border-slate-900/60';
-              const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleTimeString().slice(0, 5) : '--:--';
-              row.innerHTML = `
-                <span class="w-24 text-slate-500 font-mono text-[10px]">${timeStr}</span>
-                <span class="flex-1 px-2 text-slate-200 truncate" title="${r.details || ''}">${r.action_name}</span>
-                <span class="w-16 text-center text-amber-400 font-mono">${r.allow_ingot} 元宝</span>
-                <span class="w-20 text-right ${r.allow_ingot === 0 ? 'text-emerald-400' : 'text-amber-400'} text-[11px]">${r.allow_ingot === 0 ? '零元宝拦截' : '配额允许'}</span>
-              `;
-              logsElem.appendChild(row);
+            root.classList.remove('dark');
+            localStorage.setItem('sxd_theme', 'light');
+            showNotify('主题切换', '已切换至明亮白昼模式', 'info');
+          }
+        }
+
+        // Element Plus 消息通知轻量封装
+        function showNotify(title, message, type = 'success') {
+          if (window.ElementPlus && ElementPlus.ElNotification) {
+            ElementPlus.ElNotification({
+              title,
+              message,
+              type,
+              duration: 3000,
+              position: 'top-right',
             });
-          }
-        }
-      } catch (err) {
-        console.error("加载审计记录失败:", err);
-      }
-    }
-
-    function closeDrawer() {
-      document.getElementById('drawerOverlay').classList.add('hidden');
-      document.getElementById('detailDrawer').classList.add('translate-x-full');
-    }
-
-    // 抽屉 Tab 切换
-    function switchDrawerTab(tabName) {
-      ['assets', 'assistant', 'routines', 'audit'].forEach(t => {
-        const btn = document.getElementById('dtab-' + t);
-        const content = document.getElementById('content-' + t);
-        if (t === tabName) {
-          btn.className = "py-3 px-3.5 font-medium border-b-2 border-sky-500 text-sky-400";
-          content.classList.remove('hidden');
-        } else {
-          btn.className = "py-3 px-3.5 font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200";
-          content.classList.add('hidden');
-        }
-      });
-    }
-
-    // 控制台日志 Tab 切换与多账号隔离过滤
-    function switchLogTab(alias) {
-      currentLogAlias = alias;
-      ['all', '主号', '打工小号1', '竞技小号2'].forEach(a => {
-        const btn = document.getElementById('tab-' + a);
-        if (btn) {
-          if (a === alias) {
-            btn.className = "px-2.5 py-1 rounded bg-sky-600 text-white font-medium";
           } else {
-            btn.className = "px-2.5 py-1 rounded text-slate-400 hover:text-slate-200";
+            console.log(`[Notification] ${title}: ${message}`);
           }
         }
-      });
-      renderLogs();
-    }
 
-    function renderLogs() {
-      const consoleBody = document.getElementById('consoleBody');
-      consoleBody.innerHTML = '';
-      const filtered = allLogs.filter(l => currentLogAlias === 'all' || l.alias === currentLogAlias || !l.alias);
-      filtered.forEach(l => {
-        const p = document.createElement('p');
-        p.className = l.color || 'text-slate-300';
-        p.innerText = l.text;
-        consoleBody.appendChild(p);
-      });
-      consoleBody.scrollTop = consoleBody.scrollHeight;
-    }
-
-    function appendLog(text, level = 'INFO', alias = null) {
-      const time = new Date().toTimeString().split(' ')[0];
-      let color = 'text-slate-300';
-      if (level === 'ERROR') color = 'text-red-400 font-medium';
-      else if (level === 'WARN') color = 'text-amber-400 font-semibold';
-      else if (level === 'SUCCESS') color = 'text-emerald-400 font-medium';
-      else if (text.includes('[Online Hosting]')) color = 'text-emerald-400';
-      else if (text.includes('[Mutual Evade]')) color = 'text-amber-400 font-semibold';
-      else if (text.includes('[TaskScheduler]')) color = 'text-sky-300';
-
-      const fullText = `[${time}] ${text}`;
-      allLogs.push({ text: fullText, level, alias, color });
-      if (allLogs.length > 500) allLogs.shift();
-
-      if (currentLogAlias === 'all' || alias === currentLogAlias || !alias) {
-        const consoleBody = document.getElementById('consoleBody');
-        const p = document.createElement('p');
-        p.className = color;
-        p.innerText = fullText;
-        consoleBody.appendChild(p);
-        consoleBody.scrollTop = consoleBody.scrollHeight;
-      }
-    }
-
-    function clearLogs() {
-      allLogs = [];
-      document.getElementById('consoleBody').innerHTML = '';
-    }
-
-    // 建立持久 SSE 流式长连接
-    function initSSE() {
-      const token = localStorage.getItem('sxd_web_token') || '';
-      const url = '/api/events' + (token ? `?token=${encodeURIComponent(token)}` : '');
-      if (eventSource) eventSource.close();
-
-      eventSource = new EventSource(url);
-      eventSource.addEventListener('connected', (e) => {
-        appendLog('[System] SSE 实时事件通道建立成功，已开启全服/全账号流式监听', 'SUCCESS');
-      });
-
-      eventSource.addEventListener('log', (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          appendLog(d.message, d.level, d.alias);
-        } catch (err) {
-          appendLog(e.data);
+        // 鉴权请求头辅助函数
+        function getAuthHeaders(extra = {}) {
+          const token = localStorage.getItem('sxd_web_token') || '';
+          const headers = { ...extra };
+          if (token) headers['Authorization'] = 'Bearer ' + token;
+          return headers;
         }
-      });
 
-      eventSource.addEventListener('routine_step', (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          appendLog(`[${d.alias || 'System'}] [TaskScheduler] ${d.message}`, d.status === 'failed' ? 'ERROR' : 'INFO', d.alias);
-        } catch (err) {}
-      });
+        // 数值格式化
+        function formatCoins(n) {
+          if (!n || isNaN(n)) return '0';
+          if (n >= 100000000) return (n / 100000000).toFixed(2) + ' 亿';
+          if (n >= 10000) return (n / 10000).toFixed(0) + ' 万';
+          return n.toLocaleString();
+        }
 
-      eventSource.addEventListener('evade_alert', (e) => {
-        try {
-          const d = JSON.parse(e.data);
-          appendLog(`[${d.alias}] [Mutual Evade] ${d.reason}`, 'WARN', d.alias);
-        } catch (err) {}
-      });
-    }
+        function formatTime(ts) {
+          if (!ts) return '--:--';
+          return new Date(ts * 1000).toLocaleTimeString().slice(0, 5);
+        }
 
-    // 加载与保存 35 项日常配置
-    async function loadRoutineConfig(alias) {
-      try {
-        const token = localStorage.getItem('sxd_web_token') || '';
-        const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/routine-config`, { headers });
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const ingotInput = document.getElementById('allowedIngotsInput');
-        if (ingotInput) ingotInput.value = data.allowed_ingots || 0;
-        const enabledSet = new Set(data.enabled_routines || []);
-        document.querySelectorAll('.routine-checkbox').forEach(cb => {
-          if (cb.dataset.routine) {
-            cb.checked = enabledSet.has(cb.dataset.routine);
+        // 计算属性：统计宏观指标
+        const hostedCount = computed(() => {
+          return accounts.value.filter(a => a.connection_status === 'connected' && a.evade_state !== 'evading').length;
+        });
+
+        const evadeCount = computed(() => {
+          return accounts.value.filter(a => a.evade_state === 'evading').length;
+        });
+
+        const disabledCount = computed(() => {
+          return accounts.value.filter(a => !a.hosting_enabled).length;
+        });
+
+        const totalCoinsFormatted = computed(() => {
+          const sum = accounts.value.reduce((acc, cur) => acc + (cur.telemetry?.coins || 0), 0);
+          return formatCoins(sum);
+        });
+
+        const totalIngotsFormatted = computed(() => {
+          const sum = accounts.value.reduce((acc, cur) => acc + (cur.telemetry?.ingots || 0), 0);
+          return sum.toLocaleString();
+        });
+
+        const averageLivenessRate = computed(() => {
+          if (!accounts.value.length) return 0;
+          return Math.round((hostedCount.value / accounts.value.length) * 100);
+        });
+
+        // 过滤日志流
+        const filteredLogs = computed(() => {
+          if (currentLogAlias.value === 'all') return logs.value;
+          return logs.value.filter(l => l.alias === currentLogAlias.value || !l.alias);
+        });
+
+        // 100 格背包道具快照数组计算
+        const drawerInventory100 = computed(() => {
+          const raw = drawer.telemetry?.inventory || [];
+          const map = {};
+          raw.forEach(it => { map[it.grid_id] = it; });
+
+          const cells = [];
+          for (let i = 0; i < 100; i++) {
+            const it = map[i];
+            if (it) {
+              let borderClass = 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300';
+              let nameColor = 'text-slate-800 dark:text-slate-200';
+              let qualityGlow = '';
+
+              if (it.quality === 'gold') {
+                qualityGlow = 'quality-gold';
+                nameColor = 'text-amber-500 font-bold';
+              } else if (it.quality === 'purple') {
+                qualityGlow = 'quality-purple';
+                nameColor = 'text-purple-400 font-bold';
+              } else if (it.quality === 'blue') {
+                qualityGlow = 'quality-blue';
+                nameColor = 'text-sky-400 font-bold';
+              }
+
+              cells.push({
+                ...it,
+                cellClass: `h-12 bg-white dark:bg-slate-900 border ${borderClass} ${qualityGlow} rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell p-0.5 transition shadow-sm`,
+                nameColor,
+                shortName: it.name.length > 4 ? it.name.slice(0, 3) + '..' : it.name,
+                title: `【${it.name}】(${it.type_desc || '道具'}) [${it.quality.toUpperCase()}] x${it.count}\n只读快照 · 不会触发误变卖`
+              });
+            } else {
+              cells.push(null);
+            }
           }
+          return cells;
         });
-      } catch (err) {
-        console.error("加载日常配置失败:", err);
-      }
-    }
 
-    async function saveRoutineConfig() {
-      const alias = currentDrawerAlias;
-      const ingots = parseInt(document.getElementById('allowedIngotsInput')?.value || '0', 10);
-      const enabledRoutines = [];
-      document.querySelectorAll('.routine-checkbox').forEach(cb => {
-        if (cb.checked && cb.dataset.routine) {
-          enabledRoutines.push(cb.dataset.routine);
+        function getAssetBarHeight(coins) {
+          const history = drawer.auditLogs?.asset_history || [];
+          const max = Math.max(...history.map(h => h.coins), 1);
+          return Math.max(15, Math.round((coins / max) * 100));
         }
-      });
 
-      try {
-        const token = localStorage.getItem('sxd_web_token') || '';
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = 'Bearer ' + token;
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/routine-config`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ allowed_ingots: ingots, enabled_routines: enabledRoutines }),
-        });
-        const res = await resp.json();
-        if (res.success) {
-          appendLog(`[${alias}] [ConfigStore] 日常配置已保存至 SQLite (启用 ${res.enabled_count} 项, 元宝上限: ${res.allowed_ingots})`, 'SUCCESS', alias);
-          alert("配置已成功保存到 SQLite 数据库！");
-          closeDrawer();
+        // 日志打印辅助
+        function appendLog(text, level = 'INFO', alias = null) {
+          const time = new Date().toTimeString().split(' ')[0];
+          let color = 'text-slate-300';
+          if (level === 'ERROR') color = 'text-red-400 font-medium';
+          else if (level === 'WARN') color = 'text-amber-400 font-semibold';
+          else if (level === 'SUCCESS') color = 'text-emerald-400 font-medium';
+          else if (text.includes('[Online Hosting]') || text.includes('托管就绪')) color = 'text-emerald-400';
+          else if (text.includes('[Mutual Evade]') || text.includes('防互踢避让')) color = 'text-amber-400 font-semibold';
+          else if (text.includes('[TaskScheduler]')) color = 'text-sky-300';
+
+          logs.value.push({ text: `[${time}] ${text}`, level, alias, color });
+          if (logs.value.length > 500) logs.value.shift();
+
+          nextTick(() => {
+            if (consoleRef.value) {
+              consoleRef.value.scrollTop = consoleRef.value.scrollHeight;
+            }
+          });
         }
-      } catch (err) {
-        alert("保存日常配置失败: " + err);
-      }
-    }
 
-    // 手工触发日常流水线
-    async function triggerRoutine(alias) {
-      appendLog(`[${alias}] [TaskScheduler] 请求执行日常福利流水线...`, 'INFO', alias);
-      try {
-        const token = localStorage.getItem('sxd_web_token') || '';
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = 'Bearer ' + token;
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/routine/trigger`, {
-          method: 'POST',
-          headers,
-        });
-        const res = await resp.json();
-        if (res.status === 'evading_blocked') {
-          alert(`${alias} 正处于防互踢避让状态，已拦截日常执行以防顶号。请先点击【打完了·恢复托管】后再试。`);
-        } else if (res.success) {
-          appendLog(`[${alias}] [TaskScheduler] 流水线调度就绪 (任务ID: ${res.task_id})`, 'SUCCESS', alias);
+        function clearLogs() {
+          logs.value = [];
         }
-      } catch (err) {
-        appendLog(`[${alias}] [Error] 调度请求异常: ${err}`, 'ERROR', alias);
-      }
-    }
 
-    // 托管与避让控制
-    async function toggleHosting(alias, state) {
-      appendLog(`[${alias}] [Online Hosting] 托管状态变更为: ${state ? '开启常驻保活' : '已暂停托管 (释放连接)'}`);
-      try {
-        const token = localStorage.getItem('sxd_web_token') || '';
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = 'Bearer ' + token;
-        await fetch(`/api/accounts/${encodeURIComponent(alias)}/hosting/toggle`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ hosting_enabled: state }),
-        });
-      } catch (e) {}
-    }
-
-    async function resumeHosting(alias) {
-      appendLog(`[${alias}] [Manual Resume] 玩家已手动点击恢复托管，重新发起 TCP 登录握手...`);
-      try {
-        const token = localStorage.getItem('sxd_web_token') || '';
-        const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/hosting/resume`, {
-          method: 'POST',
-          headers,
-        });
-        const res = await resp.json();
-        if (res.success) {
-          appendLog(`[${alias}] [Online Hosting] 重新登录成功！已退出避让状态，恢复常驻在线。`, 'SUCCESS', alias);
-          alert(`${alias} 已成功重新连接并恢复在线托管！`);
+        function simulateLogEntry() {
+          appendLog(`[主号] [Safe Read] 角色体力探测: 185/200, 距满体力还剩 75 分钟`, 'INFO', '主号');
         }
-      } catch (e) {
-        alert("恢复托管失败: " + e);
+
+        // 静默拉取单个账号遥测并更新视图
+        async function fetchAccountTelemetry(alias) {
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/telemetry`, { headers: getAuthHeaders() });
+            if (resp.ok) {
+              const tel = await resp.json();
+              const acc = accounts.value.find(a => a.alias === alias);
+              if (acc) {
+                acc.telemetry = { ...tel };
+                acc.nickname = tel.nickname || acc.nickname;
+              }
+              if (drawer.show && drawer.alias === alias) {
+                drawer.telemetry = { ...tel };
+              }
+            }
+          } catch (e) {}
+        }
+
+        // 加载全部账号列表
+        async function loadAccounts() {
+          loadingAccounts.value = true;
+          try {
+            const resp = await fetch('/api/accounts', { headers: getAuthHeaders() });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            accounts.value = data;
+
+            // 静默并行拉取各账号核心只读遥测
+            data.forEach(acc => {
+              fetchAccountTelemetry(acc.alias);
+            });
+          } catch (err) {
+            console.error("拉取账号列表失败:", err);
+          } finally {
+            loadingAccounts.value = false;
+          }
+        }
+
+        // 手工触发单个账号全景态势抓取
+        async function syncAccountTelemetry(acc) {
+          acc.syncing = true;
+          appendLog(`[${acc.alias}] 正在发起游戏网关连接与全景态势即查即存...`, 'INFO', acc.alias);
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}/telemetry/sync`, {
+              method: 'POST',
+              headers: getAuthHeaders(),
+            });
+            const res = await resp.json();
+            if (resp.ok && res.success) {
+              appendLog(`[${acc.alias}] 全景态势同步成功！角色: ${res.nickname} (铜钱: ${formatCoins(res.coins)}, 元宝: ${res.ingots})`, 'SUCCESS', acc.alias);
+              showNotify('态势同步成功', `${acc.alias}: 铜钱 ${formatCoins(res.coins)}, 元宝 ${res.ingots}`);
+              await fetchAccountTelemetry(acc.alias);
+            } else {
+              appendLog(`[${acc.alias}] 态势同步失败: ${res.detail || res.message}`, 'WARN', acc.alias);
+              showNotify('同步失败', res.detail || res.message, 'warning');
+            }
+          } catch (e) {
+            appendLog(`[${acc.alias}] 态势同步网络异常: ${e}`, 'ERROR', acc.alias);
+          } finally {
+            acc.syncing = false;
+          }
+        }
+
+        // 全员同步态势
+        async function syncAllTelemetry() {
+          syncingAll.value = true;
+          showNotify('全员同步', '正在依次连接全量账号拉取最新游戏态势快照...');
+          for (const a of accounts.value) {
+            if (a.enabled && a.evade_state !== 'evading') {
+              await syncAccountTelemetry(a);
+            }
+          }
+          syncingAll.value = false;
+        }
+
+        // 平台选择切换时动态调整表单默认值
+        function onPlatformChange() {
+          accModal.testResult = null;
+          if (accModal.form.platform === 'xd') {
+            if (accModal.form.server === 's813') accModal.form.server = 'S3542';
+          } else if (accModal.form.platform === 'fengwanyx') {
+            if (accModal.form.server === 'S3542') accModal.form.server = 's813';
+          }
+        }
+
+        // 弹窗控制
+        function openAccountModal() {
+          accModal.form = {
+            alias: '',
+            platform: 'fengwanyx',
+            username: '',
+            password: '',
+            server: 's813',
+            server_host: '',
+            server_port: 8475,
+            server_id: 25268,
+          };
+          accModal.testResult = null;
+          accModal.show = true;
+        }
+
+        function openTokenModal() {
+          tokenModal.token = localStorage.getItem('sxd_web_token') || '';
+          tokenModal.show = true;
+        }
+
+        function saveWebToken() {
+          localStorage.setItem('sxd_web_token', tokenModal.token);
+          appendLog(`[AuthGate] Web 访问口令已更新为: ${tokenModal.token ? '••••••••' : '(留空免密)'}`);
+          showNotify('口令更新', 'Web 访问门禁已成功更新并生效！');
+          tokenModal.show = false;
+          initSSE();
+          loadAccounts();
+        }
+
+        // 测试登录 (Credential Verification)
+        async function testAccountLogin() {
+          const form = accModal.form;
+          if (!form.username || !form.password) {
+            showNotify('表单检查', '请先填写平台用户名与密码！', 'warning');
+            return false;
+          }
+          if (!form.server) {
+            showNotify('表单检查', '请填写区服标识！', 'warning');
+            return false;
+          }
+
+          accModal.testing = true;
+          accModal.testResult = null;
+          appendLog(`[TestProbe] 正在向平台 [${form.platform}] 发起鉴权探测与网关换取...`, 'INFO');
+
+          try {
+            const resp = await fetch('/api/accounts/test-login', {
+              method: 'POST',
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify({
+                platform: form.platform,
+                username: form.username,
+                password: form.password,
+                server: form.server,
+                server_host: form.server_host || null,
+                server_port: form.server_port || null,
+              }),
+            });
+            const res = await resp.json();
+            accModal.testResult = res;
+
+            if (res.success) {
+              appendLog(`[TestProbe] 登录验证通过！识别角色: ${res.nickname || res.player_name} (网关: ${res.server_host}:${res.server_port})`, 'SUCCESS');
+              showNotify('测试成功', `识别角色: ${res.nickname || res.player_name}`);
+              if (!form.alias) {
+                form.alias = res.nickname || res.player_name || `账号_${form.server}`;
+              }
+              return true;
+            } else {
+              appendLog(`[TestProbe] 登录测试被拒绝: ${res.message}`, 'WARN');
+              showNotify('测试未通过', res.message, 'warning');
+              return false;
+            }
+          } catch (err) {
+            accModal.testResult = { success: false, message: '网络请求异常: ' + err };
+            appendLog(`[TestProbe] 探测请求异常: ${err}`, 'ERROR');
+            showNotify('网络错误', String(err), 'error');
+            return false;
+          } finally {
+            accModal.testing = false;
+          }
+        }
+
+        // 保存新账号 (带前置强校验卡点)
+        async function saveNewAccount() {
+          const form = accModal.form;
+          if (!form.alias) {
+            showNotify('参数缺失', '请为账号指定一个清晰的别名！', 'warning');
+            return;
+          }
+
+          if (!accModal.testResult || !accModal.testResult.success) {
+            const ok = await testAccountLogin();
+            if (!ok) {
+              showNotify('强校验拦截', '账号登录测试未通过，严禁将错误账号存入数据库！', 'error');
+              return;
+            }
+          }
+
+          try {
+            const payload = {
+              alias: form.alias,
+              platform: form.platform,
+              username: form.username,
+              password: form.password,
+              server: form.server,
+              server_id: accModal.testResult?.server_id || form.server_id || 25268,
+              server_host: accModal.testResult?.server_host || form.server_host || null,
+              server_port: accModal.testResult?.server_port || form.server_port || null,
+              enabled: true,
+              hosting_enabled: true,
+            };
+
+            const resp = await fetch('/api/accounts', {
+              method: 'POST',
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify(payload),
+            });
+            const res = await resp.json();
+
+            if (!resp.ok) {
+              showNotify('保存失败', res.detail || JSON.stringify(res), 'error');
+              return;
+            }
+
+            appendLog(`[ConfigStore] 账号【${form.alias}】已成功持久化至 SQLite 并拉起长连接托管！`, 'SUCCESS', form.alias);
+            showNotify('添加成功', `账号【${form.alias}】已入库并开启在线托管`);
+            accModal.show = false;
+            await loadAccounts();
+          } catch (err) {
+            showNotify('保存异常', String(err), 'error');
+          }
+        }
+
+        // 删除账号
+        async function deleteAccount(acc) {
+          if (!confirm(`确定要彻底删除账号【${acc.alias}】吗？\n删除后长连接将被断开且无法撤销。`)) {
+            return;
+          }
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}`, {
+              method: 'DELETE',
+              headers: getAuthHeaders(),
+            });
+            if (resp.ok) {
+              appendLog(`[ConfigStore] 账号【${acc.alias}】已从 SQLite 删除并释放长连接`, 'WARN', acc.alias);
+              showNotify('已删除', `账号【${acc.alias}】已安全移除`);
+              await loadAccounts();
+            } else {
+              showNotify('删除失败', '服务器返回异常', 'error');
+            }
+          } catch (err) {
+            showNotify('删除异常', String(err), 'error');
+          }
+        }
+
+        // 托管开关控制
+        async function toggleHosting(acc, state) {
+          acc.hosting_enabled = state;
+          appendLog(`[${acc.alias}] [Online Hosting] 托管状态变更为: ${state ? '开启常驻保活' : '已暂停托管 (释放连接)'}`);
+          showNotify('托管变更', `${acc.alias}: ${state ? '开启长连接保活' : '已暂停托管'}`);
+          try {
+            await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}/hosting/toggle`, {
+              method: 'POST',
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify({ hosting_enabled: state }),
+            });
+          } catch (e) {}
+        }
+
+        // 防互踢手动恢复
+        async function resumeHosting(acc) {
+          appendLog(`[${acc.alias}] [Manual Resume] 玩家已手动点击恢复托管，重新发起 TCP 登录握手...`);
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}/hosting/resume`, {
+              method: 'POST',
+              headers: getAuthHeaders(),
+            });
+            const res = await resp.json();
+            if (res.success) {
+              acc.evade_state = 'none';
+              appendLog(`[${acc.alias}] [Online Hosting] 重新登录成功！已退出避让状态，恢复常驻在线。`, 'SUCCESS', acc.alias);
+              showNotify('避让恢复', `${acc.alias} 已重新连入游戏并恢复在线托管！`);
+              await loadAccounts();
+            }
+          } catch (e) {
+            showNotify('恢复失败', String(e), 'error');
+          }
+        }
+
+        // 单跑日常
+        async function triggerRoutine(acc) {
+          appendLog(`[${acc.alias}] [TaskScheduler] 请求执行日常福利流水线 (真机网关调度)...`, 'INFO', acc.alias);
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}/routine/trigger`, {
+              method: 'POST',
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+            });
+            const res = await resp.json();
+            if (res.status === 'evading_blocked') {
+              showNotify('避让拦截', `${acc.alias} 处于避让保护中，请先点击【打完了·恢复托管】`, 'warning');
+            } else if (res.success) {
+              appendLog(`[${acc.alias}] [TaskScheduler] 流水线调度就绪 (任务ID: ${res.task_id})`, 'SUCCESS', acc.alias);
+              showNotify('日常就绪', `${acc.alias} 日常流水线已启动调度`);
+            }
+          } catch (err) {
+            appendLog(`[${acc.alias}] [Error] 调度请求异常: ${err}`, 'ERROR', acc.alias);
+          }
+        }
+
+        // 全员日常与全员避让
+        function triggerAllRoutines() {
+          showNotify('全员调度', '已下发全员日常福利流水线调度');
+          accounts.value.forEach(a => {
+            if (a.enabled && a.evade_state !== 'evading') {
+              triggerRoutine(a);
+            }
+          });
+        }
+
+        function toggleAllEvade() {
+          appendLog(`[System] [Mutual Evade] 已向所有在线账号发送避让信号，连接已主动断开，防止误踢正在游戏的玩家。`, 'WARN');
+          showNotify('全员避让', '所有账号已主动断开连接避让玩家', 'warning');
+        }
+
+        // 抽屉详情加载
+        async function openDrawer(alias) {
+          drawer.alias = alias;
+          drawer.show = true;
+          drawer.loading = true;
+
+          try {
+            await Promise.allSettled([
+              loadDrawerRoutineConfig(alias),
+              loadDrawerTelemetry(alias),
+              loadDrawerAssistant(alias),
+              loadDrawerAuditLogs(alias),
+            ]);
+          } finally {
+            drawer.loading = false;
+          }
+        }
+
+        function closeDrawer() {
+          drawer.show = false;
+        }
+
+        async function syncDrawerTelemetry() {
+          drawer.loading = true;
+          try {
+            const acc = accounts.value.find(a => a.alias === drawer.alias);
+            if (acc) {
+              await syncAccountTelemetry(acc);
+            }
+            await Promise.allSettled([
+              loadDrawerTelemetry(drawer.alias),
+              loadDrawerAssistant(drawer.alias),
+              loadDrawerAuditLogs(drawer.alias),
+            ]);
+          } finally {
+            drawer.loading = false;
+          }
+        }
+
+        async function loadDrawerRoutineConfig(alias) {
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/routine-config`, { headers: getAuthHeaders() });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            drawer.routineConfig = {
+              allowed_ingots: data.allowed_ingots || 0,
+              enabled_routines: data.enabled_routines || [],
+            };
+          } catch (e) {}
+        }
+
+        async function saveRoutineConfig() {
+          const alias = drawer.alias;
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/routine-config`, {
+              method: 'PUT',
+              headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+              body: JSON.stringify({
+                allowed_ingots: drawer.routineConfig.allowed_ingots,
+                enabled_routines: drawer.routineConfig.enabled_routines,
+              }),
+            });
+            const res = await resp.json();
+            if (res.success) {
+              appendLog(`[${alias}] [ConfigStore] 日常配置已保存至 SQLite (启用 ${res.enabled_count} 项, 元宝上限: ${res.allowed_ingots})`, 'SUCCESS', alias);
+              showNotify('配置已存盘', `已成功持久化至 SQLite (启用 ${res.enabled_count} 项日常)`);
+              closeDrawer();
+            }
+          } catch (err) {
+            showNotify('保存失败', String(err), 'error');
+          }
+        }
+
+        async function loadDrawerTelemetry(alias) {
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/telemetry`, { headers: getAuthHeaders() });
+            if (!resp.ok) return;
+            drawer.telemetry = await resp.json();
+          } catch (e) {}
+        }
+
+        async function loadDrawerAssistant(alias) {
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/assistant`, { headers: getAuthHeaders() });
+            if (!resp.ok) return;
+            drawer.assistant = await resp.json();
+          } catch (e) {}
+        }
+
+        async function loadDrawerAuditLogs(alias) {
+          try {
+            const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/audit-logs`, { headers: getAuthHeaders() });
+            if (!resp.ok) return;
+            drawer.auditLogs = await resp.json();
+          } catch (e) {}
+        }
+
+        // SSE 实时推流长连接
+        function initSSE() {
+          const token = localStorage.getItem('sxd_web_token') || '';
+          const url = '/api/events' + (token ? `?token=${encodeURIComponent(token)}` : '');
+          if (eventSource) eventSource.close();
+
+          eventSource = new EventSource(url);
+          eventSource.addEventListener('connected', () => {
+            appendLog('[System] SSE 实时事件通道建立成功，已开启全服/全账号流式监听', 'SUCCESS');
+          });
+
+          eventSource.addEventListener('log', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              appendLog(d.message, d.level, d.alias);
+            } catch (err) {
+              appendLog(e.data);
+            }
+          });
+
+          eventSource.addEventListener('routine_step', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              appendLog(`[${d.alias || 'System'}] [TaskScheduler] ${d.message}`, d.status === 'failed' ? 'ERROR' : (d.status === 'completed' ? 'SUCCESS' : 'INFO'), d.alias);
+              // 流水线执行收官，自动重新拉取该账号最新全景遥测
+              if (d.step === 'complete' && d.alias) {
+                fetchAccountTelemetry(d.alias);
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('telemetry_updated', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              if (d.alias) {
+                fetchAccountTelemetry(d.alias);
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('evade_alert', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              appendLog(`[${d.alias}] [Mutual Evade] ${d.reason}`, 'WARN', d.alias);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.evade_state = 'evading';
+                target.connection_status = 'disconnected';
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('HOSTING_STARTED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.connection_status = 'connected';
+                target.hosting_enabled = true;
+                target.evade_state = 'none';
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('HOSTING_STOPPED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.connection_status = 'disconnected';
+                target.hosting_enabled = false;
+              }
+            } catch (err) {}
+          });
+        }
+
+        onMounted(() => {
+          loadAccounts();
+          initSSE();
+          appendLog('[System] FastAPI Web 控制台就绪 (Vue 3 + Element Plus 双模架构)', 'SUCCESS');
+        });
+
+        return {
+          isDark,
+          accounts,
+          loadingAccounts,
+          syncingAll,
+          currentLogAlias,
+          filteredLogs,
+          consoleRef,
+          accModal,
+          tokenModal,
+          drawer,
+          routineGroups: ROUTINE_GROUPS,
+          hostedCount,
+          evadeCount,
+          disabledCount,
+          totalCoinsFormatted,
+          totalIngotsFormatted,
+          averageLivenessRate,
+          drawerInventory100,
+          formatCoins,
+          formatTime,
+          getAssetBarHeight,
+          clearLogs,
+          simulateLogEntry,
+          toggleTheme,
+          onPlatformChange,
+          openAccountModal,
+          openTokenModal,
+          saveWebToken,
+          testAccountLogin,
+          saveNewAccount,
+          deleteAccount,
+          toggleHosting,
+          resumeHosting,
+          triggerRoutine,
+          triggerAllRoutines,
+          toggleAllEvade,
+          syncAccountTelemetry,
+          syncAllTelemetry,
+          syncDrawerTelemetry,
+          openDrawer,
+          closeDrawer,
+          saveRoutineConfig,
+        };
       }
-    }
+    });
 
-    function triggerAllRoutines() {
-      ['主号', '打工小号1', '竞技小号2'].forEach(a => triggerRoutine(a));
+    if (window.ElementPlus) {
+      app.use(ElementPlus);
     }
-
-    function toggleAllEvade() {
-      appendLog(`[System] [Mutual Evade] 已向所有在线账号发送避让信号，连接已主动断开，防止误踢正在游戏的玩家。`, 'WARN');
-      alert("全员避让指令已下发！所有账号已安全断开并暂停自动重连。");
-    }
-
-    function openAccountModal() { document.getElementById('accountModal').classList.remove('hidden'); }
-    function closeAccountModal() { document.getElementById('accountModal').classList.add('hidden'); }
-    function saveNewAccount() {
-      appendLog(`[ConfigStore] 新增账号已写入 data/config.sqlite 表 accounts`);
-      alert("账号已添加！");
-      closeAccountModal();
-    }
-
-    function openTokenModal() { document.getElementById('tokenModal').classList.remove('hidden'); }
-    function closeTokenModal() { document.getElementById('tokenModal').classList.add('hidden'); }
-    function saveWebToken() {
-      const val = document.getElementById('webTokenInput').value;
-      localStorage.setItem('sxd_web_token', val);
-      appendLog(`[AuthGate] Web 访问口令已更新为: ${val ? '••••••••' : '(留空免密)'}`);
-      alert("口令已更新！");
-      closeTokenModal();
-      initSSE();
-    }
-
-    function simulateLogEntry() {
-      appendLog(`[主号] [Safe Read] 角色体力探测: 185/200, 距满体力还剩 75 分钟`, 'INFO', '主号');
-    }
-
-    // 页面启动时自动建立 SSE
-    window.addEventListener('DOMContentLoaded', initSSE);
+    app.mount('#app');
   </script>
 </body>
 </html>

@@ -12,6 +12,7 @@ from typing import Dict, Type, Optional
 from network.platforms.base import BasePlatformAuthProvider
 from network.platforms.fengwan import FengwanAuthProvider
 from network.platforms.static import StaticAuthProvider
+from network.platforms.xd import XDPlatformAuthProvider
 
 logger = logging.getLogger("platform_registry")
 
@@ -25,6 +26,9 @@ class PlatformAuthRegistry:
         "fw": "fengwanyx",
         "direct": "static",
         "default": "fengwanyx",
+        "xindong": "xd",
+        "guanfu": "xd",
+        "gf": "xd",
     }
 
     @classmethod
@@ -55,6 +59,7 @@ class PlatformAuthRegistry:
         """初始化内置默认平台"""
         cls.register(FengwanAuthProvider())
         cls.register(StaticAuthProvider())
+        cls.register(XDPlatformAuthProvider())
 
 
 # 模块装载时自动初始化

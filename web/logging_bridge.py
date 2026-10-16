@@ -37,6 +37,8 @@ class EventBusLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         """格式化单条日志记录并分发至 EventBus"""
         try:
+            if record.name.startswith("uvicorn"):
+                return
             raw_msg = record.getMessage()
             msg = self.format(record) if self.formatter else raw_msg
 

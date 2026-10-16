@@ -140,6 +140,13 @@ def create_app(
             logger_name="sxd_bot",
         )
 
+    # 启动钩子：服务启动自动拉起全量启用账号的长连接常驻自愈守护
+    @app.on_event("startup")
+    async def on_startup() -> None:
+        sm = getattr(app.state, "session_manager", None)
+        if sm and hasattr(sm, "start_all_hosting"):
+            sm.start_all_hosting()
+
     # 1. 注册健康检查探针 (无需鉴权)
     @app.get("/api/health", tags=["System"])
     async def health_check() -> Dict[str, Any]:

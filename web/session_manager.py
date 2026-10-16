@@ -1,6 +1,7 @@
-"""神仙道多账号连接会话管理器与防互踢避让状态机
+"""神仙道多账号连接会话管理器与真机长连接托管引擎
 
 负责集中调度各账号后台 TCP Socket 长连接池与心跳保活协程，
+编排真实 35 项日常福利流水线，并在执行完毕后自动触发全景态势即查即存与实时刷报；
 精准捕获服务端顶号与异地登录通知包，自动实施防互踢避让与冷却静默探测自愈。
 
 @author Ateng
@@ -13,11 +14,113 @@ import os
 import time
 from typing import Dict, Any, Optional, List, Callable
 
+from core.context import GameContext
+from core.config import AccountConfig
 from core.events import EventBus
+from network.client import SXDClient
+from network.web_auth import WebAuthFetcher, GatewayCredentials
+from protocol.builder import PacketBuilder
+from services.query_service import QueryService
 from storage.config_db import ConfigDatabase, AccountRecord
 from storage.player_db import PlayerDatabase
 
+from tasks.routine.login import LoginTask
+from tasks.routine.heartbeat import HeartbeatTask
+from tasks.routine.signin import DailySignInTask
+from tasks.routine.money_tree import FreeMoneyTreeTask
+from tasks.routine.online_gift import OnlineGiftTask
+from tasks.routine.worship import FactionWorshipTask
+from tasks.routine.faction_roll import FactionRollCakeTask
+from tasks.routine.lucky_star import LuckyStarTask
+from tasks.routine.farm import FarmTask
+from tasks.routine.peach_pet import PeachAndPetTask
+from tasks.routine.fate import FateHuntTask
+from tasks.routine.take_bible import TakeBibleTask
+from tasks.battle.hero_mission import HeroMissionSweepTask
+from tasks.battle.normal_mission import NormalMissionSweepTask
+from tasks.battle.multi_mission import MultiMissionTask
+from tasks.battle.super_sport import SuperSportTask
+from tasks.battle.world_boss import WorldBossTask
+from tasks.routine.travel_event import TravelEventTask
+from tasks.routine.item_clean import ItemCleanTask
+from tasks.routine.traders import TradersTask
+from tasks.routine.fishing import FishingTask
+from tasks.battle.tower import TowerTask
+from tasks.routine.email import EmailTask
+from tasks.routine.ask_fairy import AskFairyTask
+from tasks.routine.touch_stone import GoldenTouchStoneTask
+from tasks.routine.weekend import WeekendRevelryTask
+from tasks.routine.assistant import AssistantTask
+from tasks.routine.practice import PracticeTask
+from tasks.routine.hunt_demon import HuntDemonTask
+from tasks.routine.five_elements import FiveElementsTask
+from tasks.routine.five_fu import FiveFuTask
+from tasks.routine.nimbus import NimbusTask
+from tasks.routine.link_fate import LinkFateTask
+from tasks.routine.home import HomeTask
+from tasks.routine.union_worship import UnionWorshipTask
+from tasks.routine.memory_zone import MemoryZoneTask
+
 logger = logging.getLogger(__name__)
+
+# 35 项日常与战斗自动化任务构造器映射字典
+ROUTINE_TASK_BUILDERS: Dict[str, Callable[[], Any]] = {
+    "signin": lambda: DailySignInTask(),
+    "money_tree": lambda: FreeMoneyTreeTask(),
+    "worship": lambda: FactionWorshipTask(),
+    "faction_roll": lambda: FactionRollCakeTask(),
+    "lucky_star": lambda: LuckyStarTask(),
+    "farm": lambda: FarmTask(),
+    "peach_pet": lambda: PeachAndPetTask(),
+    "traders": lambda: TradersTask(),
+    "fishing": lambda: FishingTask(),
+    "fish": lambda: FishingTask(),
+    "tower": lambda: TowerTask(),
+    "six_paths_tower": lambda: TowerTask(),
+    "fate": lambda: FateHuntTask(),
+    "take_bible": lambda: TakeBibleTask(),
+    "travel": lambda: TravelEventTask(),
+    "travel_event": lambda: TravelEventTask(),
+    "item_clean": lambda: ItemCleanTask(),
+    "clean": lambda: ItemCleanTask(),
+    "hero_mission": lambda: HeroMissionSweepTask(),
+    "normal_mission": lambda: NormalMissionSweepTask(),
+    "sweep": lambda: NormalMissionSweepTask(),
+    "multi_mission": lambda: MultiMissionTask(),
+    "seal_satan": lambda: MultiMissionTask(),
+    "sport": lambda: SuperSportTask(),
+    "super_sport": lambda: SuperSportTask(),
+    "arena": lambda: SuperSportTask(),
+    "boss": lambda: WorldBossTask(),
+    "world_boss": lambda: WorldBossTask(),
+    "online_gift": lambda: OnlineGiftTask(),
+    "email": lambda: EmailTask(),
+    "mail": lambda: EmailTask(),
+    "ask_fairy": lambda: AskFairyTask(),
+    "fairy": lambda: AskFairyTask(),
+    "wen_ling": lambda: AskFairyTask(),
+    "touch_stone": lambda: GoldenTouchStoneTask(),
+    "stone": lambda: GoldenTouchStoneTask(),
+    "weekend": lambda: WeekendRevelryTask(),
+    "assistant": lambda: AssistantTask(is_post_routine=False),
+    "practice": lambda: PracticeTask(),
+    "hunt_demon": lambda: HuntDemonTask(),
+    "demon": lambda: HuntDemonTask(),
+    "five_elements": lambda: FiveElementsTask(),
+    "five": lambda: FiveElementsTask(),
+    "five_fu": lambda: FiveFuTask(),
+    "fu": lambda: FiveFuTask(),
+    "nimbus": lambda: NimbusTask(),
+    "ling": lambda: NimbusTask(),
+    "link_fate": lambda: LinkFateTask(),
+    "fate_box": lambda: LinkFateTask(),
+    "home": lambda: HomeTask(),
+    "marry_home": lambda: HomeTask(),
+    "union_worship": lambda: UnionWorshipTask(),
+    "worship_union": lambda: UnionWorshipTask(),
+    "memory_zone": lambda: MemoryZoneTask(),
+    "memory": lambda: MemoryZoneTask(),
+}
 
 
 class AccountSessionManager:
@@ -43,6 +146,14 @@ class AccountSessionManager:
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._silent_probes: Dict[str, float] = {}
         self._player_dbs: Dict[str, PlayerDatabase] = {}
+        self._hosting_tasks: Dict[str, asyncio.Task] = {}
+        self._account_locks: Dict[str, asyncio.Lock] = {}
+
+    def _get_account_lock(self, alias: str) -> asyncio.Lock:
+        """获取账号独占异步锁，避免并发网络发包冲突"""
+        if alias not in self._account_locks:
+            self._account_locks[alias] = asyncio.Lock()
+        return self._account_locks[alias]
 
     def get_player_db(self, alias: str) -> Optional[PlayerDatabase]:
         """获取指定账号绑定的角色私有数据库实例
@@ -60,28 +171,27 @@ class AccountSessionManager:
         if not acc:
             return None
 
-        # 尝试查找已存在的本地数据文件 storage_{server_id}_*.db
         data_dir = "data"
-        db_path = None
-        if os.path.exists(data_dir):
-            prefix = f"storage_{acc.server_id}_"
-            for fname in os.listdir(data_dir):
-                if fname.startswith(prefix) and fname.endswith(".db"):
-                    db_path = os.path.join(data_dir, fname)
-                    break
+        # 1. 若账号已记录确切的 player_id (> 0)，严格精准匹配
+        if acc.player_id and acc.player_id > 0:
+            target_file = f"storage_{acc.server_id}_{acc.player_id}.db"
+            db_path = os.path.join(data_dir, target_file)
+            pdb = PlayerDatabase(server_id=acc.server_id, player_id=acc.player_id, db_path=db_path)
+            self._player_dbs[alias] = pdb
+            return pdb
 
-        if db_path:
-            player_id = 1
-            try:
-                parts = os.path.splitext(os.path.basename(db_path))[0].split("_")
-                if len(parts) >= 3:
-                    player_id = int(parts[2])
-            except Exception:
-                pass
-            pdb = PlayerDatabase(server_id=acc.server_id, player_id=player_id, db_path=db_path)
-        else:
-            pdb = PlayerDatabase(server_id=acc.server_id, player_id=acc.server_id or 1001, base_dir=data_dir)
+        # 2. 若尚未持久化 player_id，通过已知映射精准分配并持久化，坚决避开 _0.db 碰撞
+        known_pid = 4 if alias in ("大号", "kongyu") else (5 if alias in ("小号", "kongling") else 0)
+        if known_pid > 0:
+            self.db.update_account_player_id(alias, known_pid)
+            target_file = f"storage_{acc.server_id}_{known_pid}.db"
+            db_path = os.path.join(data_dir, target_file)
+            pdb = PlayerDatabase(server_id=acc.server_id, player_id=known_pid, db_path=db_path)
+            self._player_dbs[alias] = pdb
+            return pdb
 
+        # 3. 兜底分配
+        pdb = PlayerDatabase(server_id=acc.server_id, player_id=acc.server_id or 1001, base_dir=data_dir)
         self._player_dbs[alias] = pdb
         return pdb
 
@@ -132,7 +242,7 @@ class AccountSessionManager:
         }
 
     def start_hosting(self, alias: str) -> bool:
-        """为指定账号开启长连接托管
+        """为指定账号开启真实长连接托管与心跳保活
 
         Args:
             alias: 账号别名。
@@ -150,12 +260,39 @@ class AccountSessionManager:
         self._sessions[alias]["connection_status"] = "connected"
         self._sessions[alias]["last_heartbeat"] = time.time()
 
+        # 取消已有的工作协程
+        if alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
+            self._hosting_tasks[alias].cancel()
+
+        # 启动后台真实常驻长连接守护协程
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(self._hosting_worker(alias))
+            self._hosting_tasks[alias] = task
+        except RuntimeError:
+            pass
+
         self.event_bus.publish(
             "HOSTING_STARTED",
             {"alias": alias, "timestamp": time.time()},
         )
-        logger.info("[%s] 长连接托管已启动", alias)
+        logger.info("[%s] 长连接托管已启动 (真机 Socket 维持)", alias)
         return True
+
+    def start_all_hosting(self) -> int:
+        """为所有启用托管且处于激活状态的账号拉起长连接常驻守护协程
+
+        Returns:
+            成功拉起托管的账号数量。
+        """
+        count = 0
+        accounts = self.db.list_accounts()
+        for acc in accounts:
+            if acc.enabled and acc.hosting_enabled:
+                if self.start_hosting(acc.alias):
+                    count += 1
+        logger.info("全员长连接常驻守护就绪，共拉起 %d 个账号的自主托管协程", count)
+        return count
 
     def stop_hosting(self, alias: str) -> bool:
         """主动暂停/停止指定账号的长连接托管
@@ -169,6 +306,16 @@ class AccountSessionManager:
         self.db.set_hosting_state(alias, False)
         if alias in self._sessions:
             self._sessions[alias]["connection_status"] = "disconnected"
+            active_client = self._sessions[alias].pop("client", None)
+            if active_client:
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(active_client.disconnect())
+                except RuntimeError:
+                    pass
+
+        if alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
+            self._hosting_tasks[alias].cancel()
 
         self.event_bus.publish(
             "HOSTING_STOPPED",
@@ -176,6 +323,211 @@ class AccountSessionManager:
         )
         logger.info("[%s] 长连接托管已停止", alias)
         return True
+
+    async def _run_patrol_internal(self, alias: str) -> None:
+        """常驻周期自愈巡检：药园收种、点金助友、防体力溢出扫荡与全景态势即查即存"""
+        lock = self._get_account_lock(alias)
+        async with lock:
+            session = self._sessions.get(alias, {})
+            client = session.get("client")
+            ctx = session.get("context")
+            if not (client and client.context.is_connected and ctx):
+                return
+            try:
+                # 1. 仙府药园收获与补种
+                from tasks.routine.farm import FarmTask
+                await FarmTask().execute(client, ctx)
+                # 2. 点金助友
+                from tasks.routine.touch_stone import GoldenTouchStoneTask
+                await GoldenTouchStoneTask().execute(client, ctx)
+                # 3. 体力防溢出自动扫荡 (若当前体力 >= 5 则消耗体力)
+                if ctx.player.power >= 5:
+                    from tasks.battle.normal_mission import NormalMissionSweepTask
+                    await NormalMissionSweepTask().execute(client, ctx)
+                # 4. 小助手活跃度领奖
+                from tasks.routine.assistant import AssistantTask
+                await AssistantTask().execute(client, ctx)
+                # 5. 全景态势即查即存与推流
+                pdb = self.get_player_db(alias)
+                if pdb:
+                    query_srv = QueryService(client=client, context=ctx, player_db=pdb)
+                    await query_srv.query_all(timeout_sec=3.0)
+                    self.event_bus.publish(
+                        "telemetry_updated",
+                        {"type": "telemetry_updated", "alias": alias, "timestamp": time.time()},
+                    )
+            except Exception as e:
+                logger.warning("[%s] 周期自愈巡检非致命异常: %s", alias, e)
+
+    async def _safe_trigger_routine_async(self, alias: str) -> None:
+        """异步下发日常流水线调度 (供跨天自动清盘调用)"""
+        try:
+            self.trigger_routine(alias)
+        except Exception as e:
+            logger.error("[%s] 跨天流水线自主调度异常: %s", alias, e)
+
+    async def _hosting_worker(self, alias: str) -> None:
+        """后台常驻 Socket 长连接保活、分层双轨自愈巡检与协议通知监听协程"""
+        logger.info("[%s] 长连接常驻自愈守护协程已启动", alias)
+        lock = self._get_account_lock(alias)
+        backoff_idx = 0
+        backoff_intervals = [5.0, 15.0, 30.0, 60.0]
+        last_patrol_time = time.time()
+        last_routine_day = time.strftime("%Y-%m-%d", time.localtime())
+
+        while True:
+            try:
+                acc = self.db.get_account(alias)
+                if not acc or not acc.hosting_enabled or not acc.enabled:
+                    logger.info("[%s] 托管状态未启用或账号禁用，常驻协程退出", alias)
+                    break
+
+                if acc.evade_state == "evading":
+                    self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    await asyncio.sleep(5.0)
+                    self.check_silent_probes()
+                    continue
+
+                account_cfg = AccountConfig(
+                    alias=acc.alias,
+                    username=acc.username,
+                    password=acc.password,
+                    server=acc.server,
+                    server_id=acc.server_id,
+                    server_host=acc.server_host,
+                    server_port=acc.server_port,
+                    enabled=acc.enabled,
+                    platform=acc.platform,
+                )
+
+                creds = WebAuthFetcher.resolve_credentials(account_cfg)
+                if not creds:
+                    delay = backoff_intervals[min(backoff_idx, len(backoff_intervals) - 1)]
+                    backoff_idx += 1
+                    logger.warning("[%s] 无法解析网关认证凭据，退避 %.1f 秒后重试...", alias, delay)
+                    self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    await asyncio.sleep(delay)
+                    continue
+
+                ctx = GameContext()
+                client = SXDClient(context=ctx, event_bus=self.event_bus)
+
+                # 挂载顶号协议监听 (Mod 100 Act 22 或 Mod 0 Act 15)
+                async def _on_packet(mod: int, act: int, payload: bytes) -> None:
+                    self.handle_protocol_notification(alias, mod, act)
+
+                self.event_bus.subscribe_all(_on_packet)
+
+                connected = await client.connect(creds.server_host, creds.server_port, timeout_sec=8.0)
+                if not connected:
+                    delay = backoff_intervals[min(backoff_idx, len(backoff_intervals) - 1)]
+                    backoff_idx += 1
+                    logger.warning("[%s] 连接网关 %s:%d 失败，退避 %.1f 秒后重试...", alias, creds.server_host, creds.server_port, delay)
+                    self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    await asyncio.sleep(delay)
+                    continue
+
+                # 登录握手
+                login_task = LoginTask(creds)
+                login_res = await login_task.execute(client, ctx)
+                if not login_res.is_success:
+                    delay = backoff_intervals[min(backoff_idx, len(backoff_intervals) - 1)]
+                    backoff_idx += 1
+                    logger.warning("[%s] 托管登录认证失败: %s，退避 %.1f 秒后重试...", alias, login_res.message, delay)
+                    self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    await client.disconnect()
+                    await asyncio.sleep(delay)
+                    continue
+
+                # 成功连入，重置退避
+                backoff_idx = 0
+
+                # 登记会话
+                self._sessions.setdefault(alias, {})
+                self._sessions[alias]["connection_status"] = "connected"
+                self._sessions[alias]["client"] = client
+                self._sessions[alias]["context"] = ctx
+                self._sessions[alias]["last_heartbeat"] = time.time()
+
+                # 持久化真实角色 player_id 并精准初始化私有数据库
+                if ctx.player.player_id > 0:
+                    self.db.update_account_player_id(alias, ctx.player.player_id)
+                pdb = PlayerDatabase(server_id=creds.server_id, player_id=ctx.player.player_id, base_dir="data")
+                self.set_player_db(alias, pdb)
+
+                try:
+                    query_srv = QueryService(client=client, context=ctx, player_db=pdb)
+                    await query_srv.query_all(timeout_sec=3.0)
+                    self.event_bus.publish(
+                        "telemetry_updated",
+                        {"type": "telemetry_updated", "alias": alias, "timestamp": time.time()},
+                    )
+                except Exception as q_exc:
+                    logger.warning("[%s] 托管初次态势感知同步异常 (非致命): %s", alias, q_exc)
+
+                logger.info("[%s] 长连接常驻托管就绪，角色: %s (Lv.%d)", alias, ctx.player.nickname, ctx.player.level)
+
+                # 分层双轨守护主循环：心跳保活 + 周期自愈巡检 + 跨天清盘
+                heartbeat_pkt = PacketBuilder(mod=0, act=1).build()
+                while client.context.is_connected:
+                    acc_cur = self.db.get_account(alias)
+                    if not acc_cur or not acc_cur.hosting_enabled or acc_cur.evade_state == "evading":
+                        break
+
+                    now = time.time()
+                    # 1. 高频保活轨：发送心跳
+                    async with lock:
+                        try:
+                            await client.send_packet(heartbeat_pkt)
+                            self._sessions[alias]["last_heartbeat"] = now
+                        except Exception as hb_exc:
+                            logger.warning("[%s] 心跳包发送失败: %s", alias, hb_exc)
+                            break
+
+                    # 2. 跨天清盘轨：每日 00:05 跨天自动触发全套 35 项日常福利
+                    curr_day = time.strftime("%Y-%m-%d", time.localtime(now))
+                    curr_hm = time.strftime("%H:%M", time.localtime(now))
+                    if curr_day != last_routine_day and curr_hm >= "00:05":
+                        logger.info("[%s] 检测到自然日跨天 (%s)，自动触发全员全量日常福利清盘流水线...", alias, curr_day)
+                        last_routine_day = curr_day
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(self._safe_trigger_routine_async(alias))
+                        except Exception as tr_err:
+                            logger.warning("[%s] 跨天流水线启动异常: %s", alias, tr_err)
+
+                    # 3. 中频巡检轨：默认每 30 分钟 (1800 秒) 自动巡检药园/助友/防体力溢出
+                    elif now - last_patrol_time >= 1800.0:
+                        last_patrol_time = now
+                        logger.info("[%s] 触发常驻周期巡检 (药园收获补种 / 帮派助友 / 防体力溢出 / 全景态势同步)...", alias)
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(self._run_patrol_internal(alias))
+                        except Exception as pt_err:
+                            logger.warning("[%s] 周期巡检启动异常: %s", alias, pt_err)
+
+                    await asyncio.sleep(15.0)
+                    self.check_silent_probes()
+
+                self._sessions[alias]["connection_status"] = "disconnected"
+                self._sessions[alias].pop("client", None)
+                await client.disconnect()
+
+                # 4. 指数退避自愈：非避让模式下的异常断开，延迟后自动重新登录连接
+                acc_now = self.db.get_account(alias)
+                if acc_now and acc_now.hosting_enabled and acc_now.enabled and acc_now.evade_state != "evading":
+                    delay = backoff_intervals[min(backoff_idx, len(backoff_intervals) - 1)]
+                    backoff_idx += 1
+                    logger.warning("[%s] 托管连接非正常断开，指数退避自愈守护将于 %.1f 秒后自动重新登录连接...", alias, delay)
+                    await asyncio.sleep(delay)
+
+            except asyncio.CancelledError:
+                logger.info("[%s] 托管工作协程安全取消", alias)
+                break
+            except Exception as exc:
+                logger.error("[%s] 托管工作协程异常: %s", alias, exc, exc_info=True)
+                self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                await asyncio.sleep(10.0)
 
     def trigger_evade(
         self,
@@ -197,6 +549,15 @@ class AccountSessionManager:
             self._sessions[alias] = {}
         self._sessions[alias]["connection_status"] = "disconnected"
 
+        # 若存在活跃 client，立即主动断开以避让玩家
+        active_client = self._sessions[alias].pop("client", None)
+        if active_client:
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(active_client.disconnect())
+            except RuntimeError:
+                pass
+
         # 调度静默探测
         self._silent_probes[alias] = now + probe_delay_sec
 
@@ -207,6 +568,15 @@ class AccountSessionManager:
                 "reason": reason,
                 "timestamp": now,
                 "probe_delay_sec": probe_delay_sec,
+            },
+        )
+        self.event_bus.publish(
+            "evade_alert",
+            {
+                "type": "evade_alert",
+                "alias": alias,
+                "reason": f"触发防互踢避让 (原因: {reason})，长连接已主动断开让位！",
+                "timestamp": now,
             },
         )
         logger.warning(
@@ -235,10 +605,7 @@ class AccountSessionManager:
 
         # 2. 重新建立长连接托管
         if acc.hosting_enabled and acc.enabled:
-            if alias not in self._sessions:
-                self._sessions[alias] = {}
-            self._sessions[alias]["connection_status"] = "connected"
-            self._sessions[alias]["last_heartbeat"] = time.time()
+            self.start_hosting(alias)
 
         self.event_bus.publish(
             "ACCOUNT_RESUMED",
@@ -263,7 +630,6 @@ class AccountSessionManager:
 
         for alias in due_aliases:
             logger.info("[%s] 静默探测冷却已满，正在探测玩家游戏会话...", alias)
-            # 探测通过，自动恢复托管
             self.resume_hosting(alias)
             resumed.append(alias)
 
@@ -299,8 +665,8 @@ class AccountSessionManager:
         specific_task: Optional[str] = None,
         force: bool = False,
     ) -> Dict[str, Any]:
-        """异步触发账号日常福利任务流水线
-        
+        """异步触发账号日常福利任务流水线 (真正网络 Socket 驱动与即查即存)
+
         Args:
             alias: 账号别名。
             specific_task: 可选指定单项日常任务（如 "money_tree"），若为空则执行全部已启用任务。
@@ -336,7 +702,12 @@ class AccountSessionManager:
             }
 
         cfg = self.db.get_routine_config(alias)
-        routines = [specific_task] if specific_task else list(cfg.enabled_routines)
+        if specific_task:
+            routines = [specific_task]
+        else:
+            # 过滤掉非独立单次日常任务 (login 与 heartbeat 属于会话底层机制)
+            routines = [r for r in cfg.enabled_routines if r not in ("login", "heartbeat")]
+
         task_id = f"routine_{alias}_{int(time.time() * 1000)}"
 
         # 发布任务启动事件
@@ -355,61 +726,234 @@ class AccountSessionManager:
         )
 
         async def _run_pipeline() -> None:
-            try:
-                for r in routines:
+            lock = self._get_account_lock(alias)
+            async with lock:
+                temp_client = False
+                client: Optional[SXDClient] = None
+                ctx: Optional[GameContext] = None
+
+                try:
+                    # 1. 优先复用当前活跃托管长连接；若无则创建临时无头连接
+                    session = self._sessions.get(alias, {})
+                    active_client = session.get("client")
+                    active_ctx = session.get("context")
+
+                    if active_client and active_client.context.is_connected and active_ctx:
+                        client = active_client
+                        ctx = active_ctx
+                        logger.info("[%s] 复用当前活跃的托管 Socket 长连接执行日常流水线", alias)
+                    else:
+                        temp_client = True
+                        account_cfg = AccountConfig(
+                            alias=acc.alias,
+                            username=acc.username,
+                            password=acc.password,
+                            server=acc.server,
+                            server_id=acc.server_id,
+                            server_host=acc.server_host,
+                            server_port=acc.server_port,
+                            enabled=acc.enabled,
+                            platform=acc.platform,
+                        )
+                        creds = WebAuthFetcher.resolve_credentials(account_cfg)
+                        if not creds:
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": "auth",
+                                    "status": "failed",
+                                    "message": "无法解析账号凭据或缺少关键认证信息，终止执行",
+                                    "timestamp": time.time(),
+                                },
+                            )
+                            return
+
+                        ctx = GameContext()
+                        client = SXDClient(context=ctx, event_bus=self.event_bus)
+
+                        self.event_bus.publish(
+                            "routine_step",
+                            {
+                                "type": "routine_step",
+                                "alias": alias,
+                                "task_id": task_id,
+                                "step": "connect",
+                                "status": "running",
+                                "message": f"正在建立与游戏网关的连接 ({creds.server_host}:{creds.server_port})...",
+                                "timestamp": time.time(),
+                            },
+                        )
+
+                        connected = await client.connect(creds.server_host, creds.server_port, timeout_sec=8.0)
+                        if not connected:
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": "connect",
+                                    "status": "failed",
+                                    "message": f"无法建立与游戏网关的连接 ({creds.server_host}:{creds.server_port})",
+                                    "timestamp": time.time(),
+                                },
+                            )
+                            return
+
+                        login_task = LoginTask(creds)
+                        login_res = await login_task.execute(client, ctx)
+                        if not login_res.is_success:
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": "login",
+                                    "status": "failed",
+                                    "message": f"游戏登录认证失败: {login_res.message}",
+                                    "timestamp": time.time(),
+                                },
+                            )
+                            await client.disconnect()
+                            return
+
+                        # 持久化真实角色 player_id 并精准初始化私有数据库
+                        if ctx.player.player_id > 0:
+                            self.db.update_account_player_id(alias, ctx.player.player_id)
+                        pdb = PlayerDatabase(server_id=creds.server_id, player_id=ctx.player.player_id, base_dir="data")
+                        self.set_player_db(alias, pdb)
+
+                    # 2. 依次调度执行各子任务
+                    for r in routines:
+                        # 断网级联熔断保护：若底层 Socket 已断开，立即紧急终止后续调度
+                        if not (client and client.context.is_connected):
+                            logger.warning("[%s] 底层网络连接已中断，紧急熔断终止后续日常调度 (中断于任务: %s)", alias, r)
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": r,
+                                    "status": "failed",
+                                    "message": f"底层网络连接中断，触发熔断保护，终止后续日常调度",
+                                    "timestamp": time.time(),
+                                },
+                            )
+                            break
+
+                        self.event_bus.publish(
+                            "routine_step",
+                            {
+                                "type": "routine_step",
+                                "alias": alias,
+                                "task_id": task_id,
+                                "step": r,
+                                "status": "running",
+                                "message": f"开始执行日常子任务: {r}",
+                                "timestamp": time.time(),
+                            },
+                        )
+
+                        builder = ROUTINE_TASK_BUILDERS.get(r)
+                        if builder:
+                            task_instance = builder()
+                            res = await task_instance.execute(client, ctx)
+                            step_status = "success" if res.is_success else "failed"
+                            step_msg = f"子任务 [{r}] 执行{'成功' if res.is_success else '未完成'}: {res.message or '完成'}"
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": r,
+                                    "status": step_status,
+                                    "message": step_msg,
+                                    "timestamp": time.time(),
+                                },
+                            )
+                        else:
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": r,
+                                    "status": "success",
+                                    "message": f"子任务 [{r}] 暂无额外动作，跳过",
+                                    "timestamp": time.time(),
+                                },
+                            )
+
+                        await asyncio.sleep(0.3)
+
+                    # 3. 日常收官：全景态势即查即存与实时刷报
                     self.event_bus.publish(
                         "routine_step",
                         {
                             "type": "routine_step",
                             "alias": alias,
                             "task_id": task_id,
-                            "step": r,
+                            "step": "sync",
                             "status": "running",
-                            "message": f"开始执行日常子任务: {r}",
-                            "timestamp": time.time(),
-                        },
-                    )
-                    await asyncio.sleep(0.02)
-                    self.event_bus.publish(
-                        "routine_step",
-                        {
-                            "type": "routine_step",
-                            "alias": alias,
-                            "task_id": task_id,
-                            "step": r,
-                            "status": "success",
-                            "message": f"子任务 [{r}] 执行成功",
+                            "message": "日常福利流水线已执行完毕，正在同步全景资产与角色态势...",
                             "timestamp": time.time(),
                         },
                     )
 
-                self.event_bus.publish(
-                    "routine_step",
-                    {
-                        "type": "routine_step",
-                        "alias": alias,
-                        "task_id": task_id,
-                        "step": "complete",
-                        "status": "completed",
-                        "message": f"日常福利流水线已全部执行完成 (共 {len(routines)} 项)",
-                        "timestamp": time.time(),
-                    },
-                )
-                logger.info("[%s] [TaskScheduler] 日常福利流水线异步执行完成 (共 %d 项)", alias, len(routines))
-            except Exception as exc:
-                self.event_bus.publish(
-                    "routine_step",
-                    {
-                        "type": "routine_step",
-                        "alias": alias,
-                        "task_id": task_id,
-                        "step": "error",
-                        "status": "failed",
-                        "message": f"日常流水线执行异常: {exc}",
-                        "timestamp": time.time(),
-                    },
-                )
-                logger.error("[%s] 日常流水线异步执行发生异常: %s", alias, exc)
+                    player_db = self.get_player_db(alias)
+                    if player_db and client and client.context.is_connected and ctx:
+                        try:
+                            query_srv = QueryService(client=client, context=ctx, player_db=player_db)
+                            await query_srv.query_all(timeout_sec=3.0)
+                            self.event_bus.publish(
+                                "telemetry_updated",
+                                {
+                                    "type": "telemetry_updated",
+                                    "alias": alias,
+                                    "timestamp": time.time(),
+                                },
+                            )
+                        except Exception as q_exc:
+                            logger.warning("[%s] 态势感知同步发生异常: %s", alias, q_exc)
+
+                    self.event_bus.publish(
+                        "routine_step",
+                        {
+                            "type": "routine_step",
+                            "alias": alias,
+                            "task_id": task_id,
+                            "step": "complete",
+                            "status": "completed",
+                            "message": f"日常福利流水线全部执行完成 (共 {len(routines)} 项)，最新资产与态势已实时存盘！",
+                            "timestamp": time.time(),
+                        },
+                    )
+                    logger.info("[%s] [TaskScheduler] 日常福利流水线真实异步执行完成 (共 %d 项)", alias, len(routines))
+
+                except Exception as exc:
+                    self.event_bus.publish(
+                        "routine_step",
+                        {
+                            "type": "routine_step",
+                            "alias": alias,
+                            "task_id": task_id,
+                            "step": "error",
+                            "status": "failed",
+                            "message": f"日常流水线执行异常: {exc}",
+                            "timestamp": time.time(),
+                        },
+                    )
+                    logger.error("[%s] 日常流水线异步执行发生异常: %s", alias, exc, exc_info=True)
+                finally:
+                    if temp_client and client:
+                        await client.disconnect()
 
         try:
             loop = asyncio.get_running_loop()
@@ -424,3 +968,83 @@ class AccountSessionManager:
             "task_id": task_id,
             "routines_count": len(routines),
         }
+
+    async def sync_telemetry(self, alias: str) -> Dict[str, Any]:
+        """按需触发指定账号的全景资产态势即查即存并推流通知
+
+        Args:
+            alias: 账号别名。
+
+        Returns:
+            同步执行结果字典。
+        """
+        acc = self.db.get_account(alias)
+        if not acc:
+            return {"success": False, "message": f"账号 '{alias}' 不存在"}
+
+        lock = self._get_account_lock(alias)
+        async with lock:
+            session = self._sessions.get(alias, {})
+            client = session.get("client")
+            ctx = session.get("context")
+            temp_client = False
+
+            try:
+                if not (client and client.context.is_connected and ctx):
+                    temp_client = True
+                    account_cfg = AccountConfig(
+                        alias=acc.alias,
+                        username=acc.username,
+                        password=acc.password,
+                        server=acc.server,
+                        server_id=acc.server_id,
+                        server_host=acc.server_host,
+                        server_port=acc.server_port,
+                        enabled=acc.enabled,
+                        platform=acc.platform,
+                    )
+                    creds = WebAuthFetcher.resolve_credentials(account_cfg)
+                    if not creds:
+                        return {"success": False, "message": "无法解析账号凭据或缺少关键认证信息"}
+
+                    ctx = GameContext()
+                    client = SXDClient(context=ctx, event_bus=self.event_bus)
+                    connected = await client.connect(creds.server_host, creds.server_port, timeout_sec=8.0)
+                    if not connected:
+                        return {"success": False, "message": "无法连接游戏网关"}
+
+                    login_task = LoginTask(creds)
+                    login_res = await login_task.execute(client, ctx)
+                    if not login_res.is_success:
+                        await client.disconnect()
+                        return {"success": False, "message": f"登录失败: {login_res.message}"}
+
+                if ctx.player.player_id > 0:
+                    self.db.update_account_player_id(alias, ctx.player.player_id)
+                pdb = PlayerDatabase(server_id=acc.server_id, player_id=ctx.player.player_id, base_dir="data")
+                self.set_player_db(alias, pdb)
+
+                query_srv = QueryService(client=client, context=ctx, player_db=pdb)
+                await query_srv.query_all(timeout_sec=3.0)
+
+                self.event_bus.publish(
+                    "telemetry_updated",
+                    {"type": "telemetry_updated", "alias": alias, "timestamp": time.time()},
+                )
+                return {
+                    "success": True,
+                    "alias": alias,
+                    "message": "全景资产态势同步完成，最新数据已入库！",
+                    "player_id": ctx.player.player_id,
+                    "nickname": ctx.player.nickname,
+                    "coins": ctx.player.coins,
+                    "ingots": ctx.player.ingots,
+                    "power": ctx.player.power,
+                }
+            except Exception as e:
+                logger.error("[%s] 态势感知同步异常: %s", alias, e)
+                return {"success": False, "message": str(e)}
+            finally:
+                if temp_client and client:
+                    await client.disconnect()
+
