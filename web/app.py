@@ -99,17 +99,22 @@ def create_app(
     db: Optional[ConfigDatabase] = None,
     static_dir: Optional[str] = None,
     routers: Optional[list] = None,
+    session_manager: Optional[Any] = None,
 ) -> FastAPI:
     """构造并初始化 FastAPI 应用实例
 
     Args:
         db: SQLite 配置仓储实例（若为 None 则默认初始化 data/config.sqlite）。
         static_dir: 静态资源目录路径（若为 None 则默认读取 web/static）。
-        routers: 待注册的 APIRouter 列表（在挂载根路径静态资源前完成注册）。
+        routers: 待注册的外部 APIRouter 列表。
+        session_manager: 可选的长连接会话管理器实例。
 
     Returns:
         已挂载路由与静态资源的 FastAPI 应用对象。
     """
+    from web.session_manager import AccountSessionManager
+    from web.routes.accounts import router as accounts_router
+
     app = FastAPI(
         title="神仙道无头协议自动化控制台",
         description="现代化神仙道自动化 Web 管理后台与多账号调度 API",
@@ -118,6 +123,11 @@ def create_app(
 
     app.state.start_time = time.time()
     app.state.db = db if db is not None else ConfigDatabase()
+    app.state.session_manager = (
+        session_manager
+        if session_manager is not None
+        else AccountSessionManager(db=app.state.db)
+    )
 
     # 1. 注册健康检查探针 (无需鉴权)
     @app.get("/api/health", tags=["System"])
@@ -147,12 +157,15 @@ def create_app(
             detail="口令错误，请重新输入",
         )
 
-    # 3. 注册外部业务路由器
+    # 3. 注册多账号管理业务路由器
+    app.include_router(accounts_router)
+
+    # 4. 注册额外外部业务路由器
     if routers:
         for r in routers:
             app.include_router(r)
 
-    # 4. 挂载内嵌单页静态资源 (必须位于所有 API 路由注册之后)
+    # 5. 挂载内嵌单页静态资源 (必须位于所有 API 路由注册之后)
     target_static = static_dir or os.path.join(os.path.dirname(__file__), "static")
     if os.path.exists(target_static):
         app.mount("/", StaticFiles(directory=target_static, html=True), name="static")
@@ -160,4 +173,5 @@ def create_app(
         logger.warning("未找到静态资源目录: %s，根路径将无法托管静态单页", target_static)
 
     return app
+
 

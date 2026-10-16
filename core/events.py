@@ -26,6 +26,63 @@ class EventBus:
     def __init__(self) -> None:
         self._listeners: Dict[Tuple[int, int], List[EventHandler]] = {}
         self._global_listeners: List[EventHandler] = []
+        self._app_listeners: Dict[str, List[Callable]] = {}
+        self._global_app_listeners: List[Callable] = []
+
+    def subscribe_event(self, event_type: str, handler: Callable) -> None:
+        """订阅应用级通用事件
+
+        Args:
+            event_type: 事件主题/类型。
+            handler: 回调函数，支持 def 或 async def。
+        """
+        if event_type not in self._app_listeners:
+            self._app_listeners[event_type] = []
+        self._app_listeners[event_type].append(handler)
+
+    def subscribe_all_events(self, handler: Callable) -> None:
+        """订阅全量应用级通用事件广播"""
+        self._global_app_listeners.append(handler)
+
+    def publish(self, event_type: str, data: Any = None) -> None:
+        """向所有已订阅应用事件的监听器分发事件 (非阻塞，支持同步与异步回调)
+
+        Args:
+            event_type: 事件主题/类型。
+            data: 事件携带的数据载荷。
+        """
+        handlers: List[Callable] = []
+        if event_type in self._app_listeners:
+            handlers.extend(self._app_listeners[event_type])
+        handlers.extend(self._global_app_listeners)
+
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+
+        for h in handlers:
+            try:
+                try:
+                    sig = inspect.signature(h)
+                    params_cnt = len(sig.parameters)
+                except Exception:
+                    params_cnt = 2
+
+                if inspect.iscoroutinefunction(h):
+                    coro = h(data) if params_cnt == 1 else h(event_type, data)
+                    if loop and loop.is_running():
+                        loop.create_task(coro)
+                    else:
+                        asyncio.run(coro)
+                else:
+                    if params_cnt == 1:
+                        h(data)
+                    else:
+                        h(event_type, data)
+            except Exception as exc:
+                logger.error("应用事件分发异常 [%s]: %s", event_type, exc)
 
     def subscribe(self, mod: int, act: int, handler: EventHandler) -> None:
         """订阅指定模块和动作的事件广播
