@@ -23,10 +23,17 @@ from network.client import SXDClient
 from protocol.packet import ByteArrayWriter
 from storage.player_db import PlayerDatabase
 
-from services.query_models import PlayerAssetDTO, RoleDTO
+from services.query_models import (
+    PlayerAssetDTO,
+    RoleDTO,
+    AssistantDailyDTO,
+    AssistantDailyItemDTO,
+    AssistantLivenessBoxDTO,
+)
 from services.query_service import QueryService
 from services.query_formatter import QueryFormatter
 from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
+from protocol.messages.assistant import AssistantInfoReq, AssistantInfoResp
 
 
 class TestQueryService(unittest.IsolatedAsyncioTestCase):
@@ -378,6 +385,145 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
             output = captured_out.getvalue()
             self.assertIn("参战伙伴阵容看板", output)
             self.assertIn("巨灵神", output)
+
+
+    # ==================== 8. 小助手 (Assistant: Mod 52) 编解码与矩阵测试 ====================
+
+    def _build_mock_assistant_info_payload(self) -> bytes:
+        """构造 Mod 52 Act 0 info 二进制应答桩"""
+        writer = ByteArrayWriter()
+        # List 0: 日常条目列表 (长度 3: 招财, 祭神, 未知玩法999)
+        writer.write_uint16(3)
+
+        # 条目 1: 招财神符 (ID=1)
+        writer.write_int32(1)  # item_id
+        writer.write_int32(1)  # completed_count
+        writer.write_uint16(1) # sub array len
+        writer.write_int32(1)  # quota = 1
+
+        # 条目 2: 帮派祭神 (ID=2)
+        writer.write_int32(2)  # item_id
+        writer.write_int32(0)  # completed_count
+        writer.write_uint16(1)
+        writer.write_int32(1)  # quota = 1
+
+        # 条目 3: 未知新玩法 (ID=999)
+        writer.write_int32(999) # item_id
+        writer.write_int32(3)   # completed_count
+        writer.write_uint16(1)
+        writer.write_int32(5)   # quota = 5
+
+        # List 1: 活跃度宝箱列表 (长度 3)
+        writer.write_uint16(3)
+
+        # 宝箱 1: 第 1 档 (20 活跃度，已领取 status=4)
+        writer.write_int32(1)  # box_id
+        writer.write_int32(20) # required_liveness
+        writer.write_int32(4)  # status
+
+        # 宝箱 2: 第 2 档 (40 活跃度，可领取 status=0)
+        writer.write_int32(2)  # box_id
+        writer.write_int32(40) # required_liveness
+        writer.write_int32(0)  # status
+
+        # 宝箱 3: 第 3 档 (60 活跃度，未达标 status=2)
+        writer.write_int32(3)  # box_id
+        writer.write_int32(60) # required_liveness
+        writer.write_int32(2)  # status
+
+        return writer.to_bytes()
+
+    def test_assistant_dto_to_dict(self) -> None:
+        """验证 AssistantDailyDTO 字典序列化"""
+        item = AssistantDailyItemDTO(item_id=1, name="招财神符", completed_count=1, total_quota=1, is_completed=True)
+        box = AssistantLivenessBoxDTO(box_id=1, required_liveness=20, status=4, status_desc="已领取")
+        dto = AssistantDailyDTO(current_liveness=50, max_liveness=100, items=[item], boxes=[box])
+
+        d = dto.to_dict()
+        self.assertEqual(d["current_liveness"], 50)
+        self.assertEqual(len(d["items"]), 1)
+        self.assertEqual(d["items"][0]["name"], "招财神符")
+        self.assertTrue(d["items"][0]["is_completed"])
+        self.assertEqual(len(d["boxes"]), 1)
+        self.assertEqual(d["boxes"][0]["status_desc"], "已领取")
+
+    async def test_query_assistant_service_and_graceful_fallback(self) -> None:
+        """验证 QueryService.query_assistant 解析、未知 ID 优雅降级与 SQLite 快照落盘"""
+        mock_payload = self._build_mock_assistant_info_payload()
+        self.client.request = AsyncMock(return_value=mock_payload)
+
+        service = QueryService(self.client, self.ctx, self.player_db)
+        dto = await service.query_assistant()
+
+        self.assertEqual(len(dto.items), 3)
+        self.assertEqual(dto.items[0].name, "招财神符")
+        self.assertTrue(dto.items[0].is_completed)
+
+        self.assertEqual(dto.items[1].name, "帮派祭神")
+        self.assertFalse(dto.items[1].is_completed)
+
+        # 核心防线验证：未知 ID=999 优雅回退为未知玩法，绝不抛出 KeyError
+        self.assertEqual(dto.items[2].name, "未知玩法 #999")
+        self.assertEqual(dto.items[2].completed_count, 3)
+        self.assertEqual(dto.items[2].total_quota, 5)
+
+        # 验证宝箱状态
+        self.assertEqual(len(dto.boxes), 3)
+        self.assertEqual(dto.boxes[0].status_desc, "已领取")
+        self.assertEqual(dto.boxes[1].status_desc, "可领取")
+        self.assertEqual(dto.boxes[2].status_desc, "未达标")
+
+        # 验证 SQLite 模块快照落盘
+        state = self.player_db.get_module_state(module_id=52, state_key="assistant_info")
+        self.assertIsNotNone(state)
+        self.assertIn("items", state.payload)
+        self.assertEqual(len(state.payload["items"]), 3)
+
+    def test_query_formatter_assistant_table_and_json(self) -> None:
+        """验证 QueryFormatter 输出小助手矩阵表格与 JSON"""
+        item = AssistantDailyItemDTO(item_id=1, name="招财神符", completed_count=1, total_quota=1, is_completed=True)
+        box = AssistantLivenessBoxDTO(box_id=1, required_liveness=20, status=4, status_desc="已领取")
+        dto = AssistantDailyDTO(current_liveness=50, max_liveness=100, items=[item], boxes=[box])
+
+        table = QueryFormatter.format_assistant_table(dto)
+        self.assertIn("小助手今日日常进度与活跃度看板", table)
+        self.assertIn("招财神符", table)
+        self.assertIn("已达成", table)
+        self.assertIn("第 1 档 (20点): [已领取]", table)
+
+        json_str = QueryFormatter.format_assistant_json(dto)
+        data = json.loads(json_str)
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["type"], "assistant")
+        self.assertEqual(data["data"]["current_liveness"], 50)
+
+    async def test_run_query_mode_assistant(self) -> None:
+        """验证 main.py run_query_mode query_target='assistant'"""
+        from io import StringIO
+        import sys
+        from unittest.mock import patch
+        from main import run_query_mode
+
+        config = {
+            "auth_mode": "static",
+            "server": {"host": "127.0.0.1", "port": 8000},
+            "credentials": {"player_name": "test_user", "server_id": 1},
+        }
+
+        captured_out = StringIO()
+        with patch.object(SXDClient, "connect", new=AsyncMock(return_value=True)), \
+             patch.object(SXDClient, "disconnect", new=AsyncMock(return_value=None)), \
+             patch("main.LoginTask.execute", new=AsyncMock(return_value=MagicMock(is_success=True))), \
+             patch.object(QueryService, "query_assistant", new=AsyncMock(return_value=AssistantDailyDTO(
+                 current_liveness=80,
+                 items=[AssistantDailyItemDTO(item_id=1, name="招财神符", completed_count=1, total_quota=1, is_completed=True)],
+                 boxes=[],
+             ))), \
+             patch.object(sys, "stdout", captured_out):
+            await run_query_mode(config, query_target="assistant", as_json=False)
+            output = captured_out.getvalue()
+            self.assertIn("小助手今日日常进度与活跃度看板", output)
+            self.assertIn("招财神符", output)
 
 
 if __name__ == "__main__":

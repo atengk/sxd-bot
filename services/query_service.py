@@ -7,16 +7,58 @@
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 from core.context import GameContext
 from network.client import SXDClient
 from protocol.builder import PacketBuilder
 from protocol.messages.player import PlayerInfoResp
 from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
-from services.query_models import PlayerAssetDTO, RoleDTO
+from protocol.messages.assistant import AssistantInfoReq, AssistantInfoResp
+from services.query_models import (
+    PlayerAssetDTO,
+    RoleDTO,
+    AssistantDailyDTO,
+    AssistantDailyItemDTO,
+    AssistantLivenessBoxDTO,
+)
 from storage.player_db import PlayerDatabase, PlayerProfileRecord, ModuleStateRecord
 
 logger = logging.getLogger(__name__)
+
+AssistantItemManifest: Dict[int, str] = {
+    1: "招财神符",
+    2: "帮派祭神",
+    3: "吉星高照",
+    4: "仙府药园",
+    5: "摘仙桃",
+    6: "喜从天降",
+    7: "吹鱼/钓鱼",
+    8: "竞技场",
+    9: "多人副本",
+    10: "日常活跃/其他",
+    11: "生肖重置",
+    12: "送花/结缘",
+    13: "仙道问灵",
+    14: "点金石",
+    15: "护送取经",
+}
+
+
+def _format_box_status(status: int) -> str:
+    """转换活跃度宝箱状态码为可读状态文本"""
+    if status == 0:
+        return "可领取"
+    elif status == 4:
+        return "已领取"
+    elif status == 2:
+        return "未达标"
+    elif status == 1:
+        return "VIP不足"
+    elif status == 3:
+        return "背包已满"
+    else:
+        return f"状态({status})"
+
 
 
 class QueryService:
@@ -176,3 +218,77 @@ class QueryService:
                 logger.warning("本地 SQLite 伙伴快照写入失败 (非致命): %s", e)
 
         return roles_dto
+
+    async def query_assistant(self, timeout_sec: float = 3.0) -> AssistantDailyDTO:
+        """查询小助手日常任务进度与活跃度看板 (Mod 52, Act 0: info)
+
+        发起只读状态请求，提取日常条目完成度与活跃度宝箱状态，并持久化写入 SQLite。
+
+        @author Ateng
+        @since 2026-10-16
+
+        Args:
+            timeout_sec: 网络请求等待超时秒数。
+
+        Returns:
+            小助手日常态势强类型数据传输对象。
+        """
+        logger.info("正在查询小助手日常进度与活跃度 (Mod 52, Act 0: info)...")
+        items_dto: List[AssistantDailyItemDTO] = []
+        boxes_dto: List[AssistantLivenessBoxDTO] = []
+        current_liveness = 0
+
+        try:
+            req_pkt = AssistantInfoReq()
+            resp_bytes = await self.client.request(req_pkt, timeout_sec=timeout_sec)
+            if resp_bytes:
+                resp = AssistantInfoResp.decode(resp_bytes)
+                for it in resp.items:
+                    name = AssistantItemManifest.get(it.item_id, f"未知玩法 #{it.item_id}")
+                    total_quota = it.quota_list[0] if it.quota_list else 1
+                    is_completed = it.completed_count >= total_quota
+                    items_dto.append(
+                        AssistantDailyItemDTO(
+                            item_id=it.item_id,
+                            name=name,
+                            completed_count=it.completed_count,
+                            total_quota=total_quota,
+                            is_completed=is_completed,
+                        )
+                    )
+
+                for bx in resp.boxes:
+                    status_desc = _format_box_status(bx.status)
+                    boxes_dto.append(
+                        AssistantLivenessBoxDTO(
+                            box_id=bx.box_id,
+                            required_liveness=bx.required_liveness,
+                            status=bx.status,
+                            status_desc=status_desc,
+                        )
+                    )
+        except Exception as exc:
+            logger.warning("发包拉取 Mod 52 Act 0 小助手数据异常: %s", exc)
+
+        dto = AssistantDailyDTO(
+            current_liveness=current_liveness,
+            max_liveness=100,
+            items=items_dto,
+            boxes=boxes_dto,
+        )
+
+        # 即查即存：持久化写入本地 SQLite tb_module_state 表 (module_id=52, state_key="assistant_info")
+        if self.player_db:
+            try:
+                rec = ModuleStateRecord(
+                    module_id=52,
+                    state_key="assistant_info",
+                    payload=dto.to_dict(),
+                )
+                self.player_db.set_module_state(rec)
+                logger.debug("小助手日常快照已成功持久化至本地 SQLite (items_count=%d)", len(items_dto))
+            except Exception as e:
+                logger.warning("本地 SQLite 小助手快照写入失败 (非致命): %s", e)
+
+        return dto
+

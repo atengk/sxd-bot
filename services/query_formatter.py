@@ -8,7 +8,7 @@
 
 import json
 from typing import Any, Dict, List
-from services.query_models import PlayerAssetDTO, RoleDTO
+from services.query_models import PlayerAssetDTO, RoleDTO, AssistantDailyDTO
 
 
 class QueryFormatter:
@@ -82,3 +82,45 @@ class QueryFormatter:
             "data": [r.to_dict() for r in roles],
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def format_assistant_table(dto: AssistantDailyDTO) -> str:
+        """格式化小助手今日日常进度与活跃度看板表格"""
+        lines = [
+            "=" * 72,
+            "            小助手今日日常进度与活跃度看板 (Daily Assistant)",
+            "=" * 72,
+            f"  今日活跃度进度 : {dto.current_liveness} / {dto.max_liveness} 点",
+            "-" * 72,
+            f" {'ID':<4} | {'玩法名称':<16} | {'完成进度':<12} | {'状态':<10}",
+            "-" * 72,
+        ]
+        if not dto.items:
+            lines.append("  (暂无日常玩法数据)")
+        else:
+            for item in dto.items:
+                status_str = "已达成" if item.is_completed else "未达成"
+                progress_str = f"{item.completed_count} / {item.total_quota}"
+                lines.append(
+                    f" {item.item_id:<4} | {item.name:<16} | {progress_str:<12} | {status_str:<10}"
+                )
+        lines.append("-" * 72)
+        lines.append("  今日活跃度宝箱进度:")
+        if not dto.boxes:
+            lines.append("    (暂无宝箱档位数据)")
+        else:
+            for box in dto.boxes:
+                lines.append(f"    第 {box.box_id} 档 ({box.required_liveness}点): [{box.status_desc}]")
+        lines.append("=" * 72)
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_assistant_json(dto: AssistantDailyDTO) -> str:
+        """导出小助手日常态势为标准 JSON 字符串"""
+        payload = {
+            "status": "success",
+            "type": "assistant",
+            "data": dto.to_dict(),
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+

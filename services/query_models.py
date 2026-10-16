@@ -88,3 +88,75 @@ class RoleDTO:
             "role_job": self.role_job,
             "realm_level": self.realm_level,
         }
+
+
+@dataclass
+class AssistantDailyItemDTO:
+    """小助手单项日常任务传输模型
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    item_id: int = 0
+    name: str = ""
+    completed_count: int = 0
+    total_quota: int = 0
+    is_completed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准字典"""
+        return {
+            "item_id": self.item_id,
+            "name": self.name,
+            "completed_count": self.completed_count,
+            "total_quota": self.total_quota,
+            "is_completed": self.is_completed,
+        }
+
+
+@dataclass
+class AssistantLivenessBoxDTO:
+    """小助手每日活跃度宝箱传输模型
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    box_id: int = 0
+    required_liveness: int = 0
+    status: int = 0
+    status_desc: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准字典"""
+        return {
+            "box_id": self.box_id,
+            "required_liveness": self.required_liveness,
+            "status": self.status,
+            "status_desc": self.status_desc,
+        }
+
+
+@dataclass
+class AssistantDailyDTO:
+    """小助手今日日常态势与活跃度看板传输模型
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    current_liveness: int = 0
+    max_liveness: int = 100
+    items: List[AssistantDailyItemDTO] = field(default_factory=list)
+    boxes: List[AssistantLivenessBoxDTO] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准字典"""
+        return {
+            "current_liveness": self.current_liveness,
+            "max_liveness": self.max_liveness,
+            "items": [it.to_dict() for it in self.items],
+            "boxes": [bx.to_dict() for bx in self.boxes],
+        }
+
