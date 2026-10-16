@@ -61,11 +61,11 @@ class LoginTask(BaseTask):
             pkt_99 = PacketBuilder(mod=0, act=99).write_int32(72).build()
             await client.send_packet(pkt_99)
 
-            # 4. 获取角色基础信息 (Mod 0, Act 2)
-            pkt_2 = PacketBuilder(mod=0, act=2).write_int32(99).build()
+            # 4. 获取角色基础信息 (Mod 0, Act 2, 官方空载荷)
+            pkt_2 = PacketBuilder(mod=0, act=2).build()
             await client.send_packet(pkt_2)
-            # 等待服务端回传基础属性完成上下文中等级/财富同步
-            await asyncio.sleep(0.5)
+            # 等待服务端回传 44 项基础属性完成上下文中真实等级/财富/体力同步
+            await asyncio.sleep(0.4)
 
             return TaskResult.success("登录与角色基础初始化完成")
 

@@ -53,35 +53,55 @@ class SuperSportTask(BaseTask):
         total_fame_gained = 0
 
         try:
-            # 1. 打开竞技场主面板 (Mod 28, Act 3: open_super_sport)
-            req_open = PacketBuilder(mod=28, act=3).build()
-            resp_open = await client.request(req_open, timeout_sec=2.5)
-            logger.debug("竞技场面板打开成功 (响应长度: %d 字节)", len(resp_open))
+            # 1. 官方前置卫语句：精准查询剩余免费挑战次数 (Mod 28, Act 13: get_challenge_times)
+            req_times = PacketBuilder(mod=28, act=13).build()
+            resp_times = await client.request(req_times, timeout_sec=3.0)
+            times_reader = ByteArrayReader(resp_times)
+            free_times = times_reader.read_uint16() if times_reader.remaining >= 2 else 0
 
-            # 2. 循环检查并执行免费挑战
-            for attempt in range(self.max_challenges):
-                # 2.1 拉取最新挑战候选列表 (Mod 28, Act 4: get_challenge_list)
-                req_list = PacketBuilder(mod=28, act=4).build()
-                resp_list = await client.request(req_list, timeout_sec=2.5)
-                logger.debug("拉取候选挑战列表成功 (响应长度: %d 字节)", len(resp_list))
+            logger.info("竞技场状态同步: 今日剩余免费挑战次数 = %d 次", free_times)
 
+            if free_times <= 0:
+                msg = "今日竞技场免费挑战次数已用尽 (剩余0次)，严格遵守零元宝安全红线，坚决不付费购买次数，安全跳过"
+                logger.info(msg)
+                return TaskResult.skipped(msg, data={"free_times": 0, "fights_done": 0})
+
+            # 2. 检查挑战冷却时间 (Mod 28, Act 12: get_cd_time)
+            req_cd = PacketBuilder(mod=28, act=12).build()
+            resp_cd = await client.request(req_cd, timeout_sec=3.0)
+            cd_reader = ByteArrayReader(resp_cd)
+            cd_time = cd_reader.read_int32() if cd_reader.remaining >= 4 else 0
+
+            if cd_time > 0:
+                msg = f"当前竞技场处于挑战冷却中 (CD剩余 {cd_time} 秒)，坚决不花元宝秒CD，安全跳过"
+                logger.info(msg)
+                return TaskResult.skipped(msg, data={"cd_time": cd_time, "fights_done": 0})
+
+            # 3. 循环在免费额度内执行挑战
+            rounds = min(self.max_challenges, free_times)
+            for attempt in range(rounds):
+                # 3.1 拉取候选挑战列表 (Mod 28, Act 1: get_challenge_list)
+                req_list = PacketBuilder(mod=28, act=1).build()
+                resp_list = await client.request(req_list, timeout_sec=3.0)
                 if len(resp_list) < 4:
-                    logger.info("竞技场挑战列表数据为空或不可用，结束挑战流程")
+                    logger.info("竞技场候选挑战列表为空，结束挑战")
                     break
 
-                # 2.2 发起挑战 (Mod 28, Act 9: start_challenge)
-                logger.info("正在挑取目标发起挑战 (第 %d/%d 次)...", attempt + 1, self.max_challenges)
-                req_fight = PacketBuilder(mod=28, act=9).build()
-                resp_fight = await client.request(req_fight, timeout_sec=4.0)
+                # 3.2 发起挑战 (Mod 28, Act 2: start_challenge, 传入目标 player_id)
+                # 从列表中挑取首个对手 ID (4字节)
+                list_reader = ByteArrayReader(resp_list)
+                target_pid = list_reader.read_int32() if list_reader.remaining >= 4 else 0
 
-                if len(resp_fight) >= 4:
+                logger.info("正在挑取目标玩家 (ID: %d) 发起免费挑战 (第 %d/%d 次)...", target_pid, attempt + 1, rounds)
+                req_fight = PacketBuilder(mod=28, act=2).write_int32(target_pid).build()
+                resp_fight = await client.request(req_fight, timeout_sec=5.0)
+
+                if len(resp_fight) >= 1:
                     fights_done += 1
-                    total_fame_gained += 10  # 基础保底声望
+                    total_fame_gained += 10
                     logger.info("竞技场战斗结算成功！获得声望奖励 (结算报文: %d 字节)", len(resp_fight))
-                    # 适当呼吸防风控
                     await asyncio.sleep(1.0)
                 else:
-                    logger.info("挑战未触发或今日免费次数已用尽，安全退出")
                     break
 
             msg = f"竞技场挑战完成: 成功执行 {fights_done} 次免费挑战，累计收割声望约 {total_fame_gained}"

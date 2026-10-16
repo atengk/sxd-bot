@@ -24,7 +24,10 @@ class PlayerState:
     level: int = 1
     coins: int = 0
     ingots: int = 0
+    power: int = 0
+    fame: int = 0
     vip_level: int = 0
+    mission_key: int = 0
     logged_in: bool = False
     last_login_time: float = 0.0
 
@@ -84,21 +87,64 @@ class GameContext:
         level: int = 0,
         coins: int = 0,
         ingots: int = 0,
+        power: int = 0,
+        fame: int = 0,
+        vip_level: int = 0,
+        town_id: int = 0,
+        mission_key: int = 0,
     ) -> None:
-        """更新玩家基础角色信息"""
+        """更新玩家基础角色信息 (对照 Mod 0 Act 2 官方 44 字段解包)"""
         if nickname:
             self.player.nickname = nickname
         if player_id > 0:
             self.player.player_id = player_id
         if level > 0:
             self.player.level = level
-        if coins > 0:
+        if coins >= 0:
             self.player.coins = coins
-        if ingots > 0:
+        if ingots >= 0:
             self.player.ingots = ingots
+        if power >= 0:
+            self.player.power = power
+        if fame >= 0:
+            self.player.fame = fame
+        if vip_level >= 0:
+            self.player.vip_level = vip_level
+        if mission_key > 0:
+            self.player.mission_key = mission_key
+        if town_id > 0:
+            self.update_town(town_id)
 
     def update_town(self, town_id: int, pos_x: int = 0, pos_y: int = 0) -> None:
         """更新当前所在城镇"""
         self.town.town_id = town_id
         self.town.pos_x = pos_x
         self.town.pos_y = pos_y
+
+    def update_power(self, power: int) -> None:
+        """更新玩家剩余体力"""
+        self.player.power = max(0, power)
+
+    def update_coins(self, coins: int) -> None:
+        """更新玩家当前铜钱"""
+        self.player.coins = max(0, coins)
+
+    def update_ingots(self, ingots: int) -> None:
+        """更新玩家当前元宝"""
+        self.player.ingots = max(0, ingots)
+
+    def update_level(self, level: int) -> None:
+        """更新玩家等级"""
+        if level > 0:
+            self.player.level = level
+
+    def update_fame(self, fame: int) -> None:
+        """更新玩家声望"""
+        if fame >= 0:
+            self.player.fame = fame
+
+    def update_vip(self, vip_level: int) -> None:
+        """更新玩家 VIP 等级"""
+        if vip_level >= 0:
+            self.player.vip_level = vip_level
+

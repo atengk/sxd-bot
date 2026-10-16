@@ -113,24 +113,31 @@ class PlayerLoginReq(BasePacket):
 class PlayerLoginResp(BasePacket):
     """玩家登录结果应答封包 (Mod 0, Act 0)
 
+    对照官方 ActionScript 契约:
+    [0] result_code: UByte (0=SUCCEED)
+    [1] player_id: Int (玩家唯一数字 ID)
+
     @author Ateng
     @since 2026-10-15
     """
 
     result_code: int
-    raw_extra: bytes
+    player_id: int = 0
+    raw_extra: bytes = b""
 
-    def __init__(self, result_code: int, raw_extra: bytes) -> None:
+    def __init__(self, result_code: int, player_id: int = 0, raw_extra: bytes = b"") -> None:
         super().__init__(mod=0, act=0)
         self.result_code = result_code
+        self.player_id = player_id
         self.raw_extra = raw_extra
 
     @classmethod
     def decode(cls, data: bytes) -> "PlayerLoginResp":
         reader = ByteArrayReader(data)
         result_code = reader.read_uint8() if reader.remaining >= 1 else 0
+        player_id = reader.read_int32() if reader.remaining >= 4 else 0
         extra = reader.read_bytes()
-        return cls(result_code=result_code, raw_extra=extra)
+        return cls(result_code=result_code, player_id=player_id, raw_extra=extra)
 
     @property
     def is_success(self) -> bool:
@@ -141,58 +148,99 @@ class PlayerLoginResp(BasePacket):
 class PlayerInfoResp(BasePacket):
     """角色基础属性同步应答 (Mod 0, Act 2)
 
+    100% 对照官方 Flash Main.swf PlayerData.format_player_info 44 个标准字段解码:
+    Field 0: nickname (String) - 角色昵称
+    Field 1: level (Int) - 真实等级 (如 300 级)
+    Field 2: ingots (Int) - 真实持有元宝
+    Field 3: coins (Long) - 真实持有铜钱 (8 字节长整型)
+    Field 4: health (Long) - 生命值
+    Field 5: max_health (Long) - 最大生命值
+    Field 6: power (Int) - 真实当前体力
+    Field 7: experience (Long) - 当前角色经验
+    Field 8: max_experience (Long) - 当前等级经验上限
+    Field 9: town_map_id (Int) - 真实所在城镇地图 ID (如 29 大理城)
+    Field 14: vip_level (Int) - VIP 等级
+    Field 19: camp_id (Byte) - 阵营 ID
+    Field 21: fame (Int) - 角色声望
+    Field 29: mission_key (Int) - 当前已解锁最高副本关卡 ID
+
     @author Ateng
     @since 2026-10-15
     """
 
     nickname: str
-    player_id: int
+    player_id: int = 0
     level: int = 1
-    coins: int = 0
     ingots: int = 0
+    coins: int = 0
+    health: int = 0
+    max_health: int = 0
+    power: int = 0
+    experience: int = 0
+    max_experience: int = 0
+    town_map_id: int = 0
+    vip_level: int = 0
+    camp_id: int = 0
+    fame: int = 0
+    mission_key: int = 0
     raw_payload: bytes = b""
-
-    def __init__(
-        self,
-        nickname: str,
-        player_id: int,
-        level: int = 1,
-        coins: int = 0,
-        ingots: int = 0,
-        raw_payload: bytes = b"",
-    ) -> None:
-        super().__init__(mod=0, act=2)
-        self.nickname = nickname
-        self.player_id = player_id
-        self.level = level
-        self.coins = coins
-        self.ingots = ingots
-        self.raw_payload = raw_payload
 
     @classmethod
     def decode(cls, data: bytes) -> "PlayerInfoResp":
         reader = ByteArrayReader(data)
         nickname = reader.read_utf() if reader.remaining >= 2 else ""
-        player_id = reader.read_int32() if reader.remaining >= 4 else 0
-        coins = reader.read_int32() if reader.remaining >= 4 else 0
+        level = reader.read_int32() if reader.remaining >= 4 else 1
         ingots = reader.read_int32() if reader.remaining >= 4 else 0
+        coins = reader.read_int64() if reader.remaining >= 8 else 0
+        health = reader.read_int64() if reader.remaining >= 8 else 0
+        max_health = reader.read_int64() if reader.remaining >= 8 else 0
+        power = reader.read_int32() if reader.remaining >= 4 else 0
         exp = reader.read_int64() if reader.remaining >= 8 else 0
+        max_exp = reader.read_int64() if reader.remaining >= 8 else 0
+        town_map_id = reader.read_int32() if reader.remaining >= 4 else 0
 
-        # 从属性扩展区中探测角色真实等级
-        level = 1
-        rem_bytes = data[len(data) - reader.remaining :]
-        for offset in (16, 24, 0, 2):
-            if offset + 2 <= len(rem_bytes):
-                cand = int.from_bytes(rem_bytes[offset : offset + 2], "big")
-                if 20 <= cand <= 250:
-                    level = cand
-                    break
+        # 跳过 10~13 (bossMapId, jihuisuoId, mounts, mountsCD: 共 4 个 4B Int)
+        for _ in range(4):
+            if reader.remaining >= 4:
+                reader.read_int32()
+
+        vip_level = reader.read_int32() if reader.remaining >= 4 else 0
+
+        # 跳过 15~18 (avatar, avatarCD, mainPlayerRoleId, mainRoleId: 共 4 个 4B Int)
+        for _ in range(4):
+            if reader.remaining >= 4:
+                reader.read_int32()
+
+        camp_id = reader.read_int8() if reader.remaining >= 1 else 0
+
+        # 跳过 20 (townKey: 4B Int)
+        if reader.remaining >= 4:
+            reader.read_int32()
+
+        fame = reader.read_int32() if reader.remaining >= 4 else 0
+
+        # 跳过 22~28
+        for _ in range(7):
+            if reader.remaining >= 4:
+                reader.read_int32()
+
+        mission_key = reader.read_int32() if reader.remaining >= 4 else 0
 
         return cls(
             nickname=nickname,
-            player_id=player_id,
+            player_id=0,
             level=level,
-            coins=coins,
             ingots=ingots,
+            coins=coins,
+            health=health,
+            max_health=max_health,
+            power=power,
+            experience=exp,
+            max_experience=max_exp,
+            town_map_id=town_map_id,
+            vip_level=vip_level,
+            camp_id=camp_id,
+            fame=fame,
+            mission_key=mission_key,
             raw_payload=data,
         )

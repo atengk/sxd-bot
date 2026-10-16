@@ -162,6 +162,44 @@ class TestPacketModels(unittest.TestCase):
         self.assertEqual(login_req.platform, "fengwanyx")
         self.assertEqual(login_req.server_id, 25268)
 
+    def test_player_info_resp_official_decoding(self) -> None:
+        """测试 Mod 0 Act 2 官方 44 字段解包契约"""
+        from protocol.packet import ByteArrayWriter
+        writer = ByteArrayWriter()
+        writer.write_utf("梦一场")     # 0: nickname
+        writer.write_int32(300)        # 1: level
+        writer.write_int32(40096)      # 2: ingots
+        writer.write_int64(36807665882)# 3: coins
+        writer.write_int64(9180049)    # 4: health
+        writer.write_int64(9180049)    # 5: max_health
+        writer.write_int32(138)        # 6: power
+        writer.write_int64(1000)       # 7: exp
+        writer.write_int64(2000)       # 8: max_exp
+        writer.write_int32(29)         # 9: town_map_id
+        # 10 ~ 13 (4 ints)
+        for _ in range(4): writer.write_int32(0)
+        writer.write_int32(10)         # 14: vip_level
+        # 15 ~ 18 (4 ints)
+        for _ in range(4): writer.write_int32(0)
+        writer.write_int8(1)           # 19: camp_id
+        writer.write_int32(0)          # 20: townKey
+        writer.write_int32(50000)      # 21: fame
+        # 22 ~ 28 (7 ints)
+        for _ in range(7): writer.write_int32(0)
+        writer.write_int32(854)        # 29: mission_key
+
+        resp = PlayerInfoResp.decode(writer.to_bytes())
+        self.assertEqual(resp.nickname, "梦一场")
+        self.assertEqual(resp.level, 300)
+        self.assertEqual(resp.ingots, 40096)
+        self.assertEqual(resp.coins, 36807665882)
+        self.assertEqual(resp.power, 138)
+        self.assertEqual(resp.town_map_id, 29)
+        self.assertEqual(resp.vip_level, 10)
+        self.assertEqual(resp.camp_id, 1)
+        self.assertEqual(resp.fame, 50000)
+        self.assertEqual(resp.mission_key, 854)
+
 
 if __name__ == "__main__":
     unittest.main()

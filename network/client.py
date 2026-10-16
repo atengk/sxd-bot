@@ -200,23 +200,55 @@ class SXDClient:
             if mod == 0 and act == 0:
                 resp = PlayerLoginResp.decode(body)
                 if resp.is_success:
-                    self.context.update_login_success()
-                    logger.info("收到登录成功应答，已自动激活全局上下文 logged_in 状态")
+                    self.context.update_login_success(resp.player_id)
+                    logger.info("收到登录成功应答，玩家ID=%d，已自动激活全局上下文 logged_in 状态", resp.player_id)
             elif mod == 0 and act == 2:
                 resp = PlayerInfoResp.decode(body)
                 self.context.update_player_info(
-                    resp.nickname,
-                    resp.player_id,
+                    nickname=resp.nickname,
+                    player_id=self.context.player.player_id,
                     level=resp.level,
                     coins=resp.coins,
                     ingots=resp.ingots,
+                    power=resp.power,
+                    fame=resp.fame,
+                    vip_level=resp.vip_level,
+                    town_id=resp.town_map_id,
+                    mission_key=resp.mission_key,
                 )
                 logger.info(
-                    "玩家基础属性已同步: 昵称='%s', 等级=%d, 铜钱=%d, 元宝=%d",
+                    "玩家基础属性已同步 (官方契约): 昵称='%s', 等级=%d, 铜钱=%d, 元宝=%d, 体力=%d, 城镇ID=%d",
                     resp.nickname,
                     resp.level,
                     resp.coins,
                     resp.ingots,
+                    resp.power,
+                    resp.town_map_id,
                 )
+            elif mod == 0 and act == 3:
+                # 角色属性变更广播 (Mod_Player_Base.update_player_data)
+                # 报文格式: [2B Count] + N * [1B PropID + 8B Value]
+                if len(body) >= 2:
+                    cnt = int.from_bytes(body[:2], "big")
+                    if len(body) >= 2 + cnt * 9:
+                        for i in range(cnt):
+                            prop_id = body[2 + i * 9]
+                            val = int.from_bytes(body[3 + i * 9 : 11 + i * 9], "big")
+                            if prop_id == 18:
+                                self.context.update_level(val)
+                                logger.info("玩家等级权威更新: %d 级", val)
+                            elif prop_id == 19:
+                                self.context.update_ingots(val)
+                                logger.info("玩家元宝权威更新: %d", val)
+                            elif prop_id == 20:
+                                self.context.update_coins(val)
+                                logger.info("玩家铜钱权威更新: %d", val)
+                            elif prop_id in (23, 77):
+                                self.context.update_power(val)
+                                logger.info("玩家体力权威更新: %d 点", val)
+                            elif prop_id == 37:
+                                self.context.update_fame(val)
+                            elif prop_id == 39:
+                                self.context.update_vip(val)
         except Exception as exc:
             logger.warning("解析并同步状态上下文异常 [Mod=%d, Act=%d]: %s", mod, act, exc)

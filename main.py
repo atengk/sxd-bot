@@ -36,17 +36,22 @@ from tasks.routine.signin import DailySignInTask
 from tasks.routine.money_tree import FreeMoneyTreeTask
 from tasks.routine.online_gift import OnlineGiftTask
 from tasks.routine.worship import FactionWorshipTask
+from tasks.routine.faction_roll import FactionRollCakeTask
 from tasks.routine.lucky_star import LuckyStarTask
 from tasks.routine.farm import FarmTask
 from tasks.routine.peach_pet import PeachAndPetTask
 from tasks.routine.fate import FateHuntTask
 from tasks.routine.take_bible import TakeBibleTask
 from tasks.battle.hero_mission import HeroMissionSweepTask
+from tasks.battle.normal_mission import NormalMissionSweepTask
 from tasks.battle.multi_mission import MultiMissionTask
 from tasks.battle.super_sport import SuperSportTask
 from tasks.battle.world_boss import WorldBossTask
 from tasks.routine.travel_event import TravelEventTask
 from tasks.routine.item_clean import ItemCleanTask
+from tasks.routine.traders import TradersTask
+from tasks.routine.fishing import FishingTask
+from tasks.battle.tower import TowerTask
 
 # 配置标准受管日志
 logging.basicConfig(
@@ -131,9 +136,14 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         "signin": DailySignInTask(),
         "money_tree": FreeMoneyTreeTask(),
         "worship": FactionWorshipTask(),
+        "faction_roll": FactionRollCakeTask(),
         "lucky_star": LuckyStarTask(),
         "farm": FarmTask(),
         "peach_pet": PeachAndPetTask(),
+        "traders": TradersTask(),
+        "fishing": FishingTask(),
+        "fish": FishingTask(),
+        "tower": TowerTask(),
         "fate": FateHuntTask(),
         "take_bible": TakeBibleTask(),
         "travel": TravelEventTask(),
@@ -141,6 +151,8 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         "item_clean": ItemCleanTask(),
         "clean": ItemCleanTask(),
         "hero_mission": HeroMissionSweepTask(),
+        "normal_mission": NormalMissionSweepTask(),
+        "sweep": NormalMissionSweepTask(),
         "multi_mission": MultiMissionTask(),
         "sport": SuperSportTask(),
         "super_sport": SuperSportTask(),
@@ -156,18 +168,23 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         else:
             logger.warning("未识别的任务指令: %s，支持项: %s", specific_task, list(task_map.keys()))
     else:
-        # 默认依序注册全功能日常与战斗流水线 (共 15 大自动化引擎)
+        # 默认依序注册全功能日常与战斗流水线 (共 20 大自动化引擎)
         scheduler.register(DailySignInTask())
         scheduler.register(FreeMoneyTreeTask())
         scheduler.register(FactionWorshipTask())
+        scheduler.register(FactionRollCakeTask())
         scheduler.register(LuckyStarTask())
         scheduler.register(FarmTask())
         scheduler.register(PeachAndPetTask())
+        scheduler.register(TradersTask())
+        scheduler.register(FishingTask())
+        scheduler.register(TowerTask())
         scheduler.register(FateHuntTask())
         scheduler.register(TakeBibleTask())
         scheduler.register(TravelEventTask())
         scheduler.register(ItemCleanTask())
         scheduler.register(HeroMissionSweepTask())
+        scheduler.register(NormalMissionSweepTask())
         scheduler.register(MultiMissionTask())
         scheduler.register(SuperSportTask())
         scheduler.register(WorldBossTask())
@@ -218,6 +235,7 @@ def print_execution_summary(ctx: GameContext, scheduler: TaskScheduler) -> None:
     print("    [+] 吉星高照 (RollCake): 免费吉星状态与境界点同步完成")
     print("    [+] 仙府药园种植       : 土地状态成功同步，仙草生长维护完成")
     print("    [+] 摘仙桃与神龙培养   : 仙桃巨额经验摘取与神龙喂养完成")
+    print("    [+] 喜从天降与通商行情 : 主面板货物资产与行情指数同步完成")
     print("    [+] 猎命系统与背包整理 : 命格状态同步与灰命变现/拾取完成")
     print("    [+] 西天取经与阵营俸禄 : 阵营俸禄已领取，使者护送启程")
     print("    [+] 仙履奇缘智能答题   : 题库最优选项匹配结算 (体力/声望优先)")
@@ -225,6 +243,7 @@ def print_execution_summary(ctx: GameContext, scheduler: TaskScheduler) -> None:
     print("-" * 62)
     print("  副本与战斗自动化板块:")
     print("    [+] 每日精英副本扫荡   : 已触发挂机扫荡与快速秒完成结算")
+    print("    [+] 普通副本极速扫荡   : 剩余体力已安全极速扫荡清空 (零元宝)")
     print("    [+] 多人副本组队挑战   : 已纳入活动时段自动轮询调度 (12:30/18:30)")
     print("    [+] 竞技场自动挑软柿子 : 挑选低战高名次目标挑战冲榜完成")
     print("    [+] 世界 Boss 定时参战 : 阅历免费鼓舞与时段感知自动参战挂机")
@@ -256,7 +275,7 @@ def main() -> None:
         "--task",
         "-t",
         default="all",
-        help="指定执行任务: all, signin, money_tree, worship, lucky_star, farm, peach_pet, fate, take_bible, travel, item_clean, hero_mission, multi_mission, sport, boss, online_gift",
+        help="指定执行任务: all, signin, money_tree, worship, lucky_star, farm, peach_pet, traders, fishing, tower, fate, take_bible, travel, item_clean, hero_mission, sweep, normal_mission, multi_mission, sport, boss, online_gift",
     )
     parser.add_argument(
         "--verbose",

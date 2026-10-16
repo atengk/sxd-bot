@@ -21,6 +21,7 @@
   - **背包整理**：主背包智能归纳分类，低级杂物变卖变现，防爆仓掉落丢失。
 - **副本与战斗自动化 (Battle Automation)**：
   - **每日精英副本**：自动挂机扫荡与快速秒完成结算；
+  - **普通副本极速扫荡**：自动感知剩余体力，批量快速扫荡清空体力防溢出（严格零元宝、自动变卖低级杂物）；
   - **多人副本**：活动时段感知（每日 12:30-13:30 / 18:30-19:30）与自动组队挑战；
   - **竞技场冲榜**：挑软柿子自动挑战，收割声望与排名奖励（每日免费 15 次挑战）；
   - **世界 Boss 参战**：时段感知接入、免费阅历鼓舞战力、阵亡免费复活重返战场。
@@ -38,7 +39,7 @@
 sxd_bot/
 ├── CONTEXT.md                  # 领域模型统一语言与术语表
 ├── docs/
-│   ├── adr/                    # 架构决策记录 (0001 ~ 0006)
+│   ├── adr/                    # 架构决策记录 (0001 ~ 0007)
 │   ├── protocol/               # 逆向协议二进制封包规约速查矩阵
 │   ├── architecture/           # 架构模型与执行生命周期指南
 │   └── tools/                  # 逆向与流量嗅探 MCP 工具链实战指南
@@ -75,6 +76,7 @@ sxd_bot/
 │   │   └── online_gift.py      # 在线礼包巡检
 │   └── battle/                 # 副本与战斗自动化
 │       ├── hero_mission.py     # 每日精英副本挂机扫荡与秒完成
+│       ├── normal_mission.py   # 普通副本自动极速扫荡与体力清空
 │       ├── multi_mission.py    # 多人副本活动时段感知与自动组队挑战
 │       ├── super_sport.py      # 竞技场自动挑软柿子挑战冲榜
 │       └── world_boss.py       # 世界 Boss 定时参战与鼓舞
@@ -121,6 +123,9 @@ python main.py -t fate
 # 精英副本扫荡
 python main.py -t hero_mission
 
+# 普通副本极速扫荡 (清空剩余体力)
+python main.py -t sweep
+
 # 多人副本
 python main.py -t multi_mission
 ```
@@ -137,8 +142,10 @@ python main.py -t multi_mission
   - [0004 零元宝安全熔断机制与前置卫语句跳过策略](./docs/adr/0004-zero-ingot-guardrail-and-fail-fast-skipping.md)
   - [0005 统一事件总线与双模任务调度器](./docs/adr/0005-unified-eventbus-and-dual-mode-scheduler.md)
   - [0006 Agent-Native MCP 逆向与流量嗅探工具链](./docs/adr/0006-agent-native-mcp-reverse-toolchain.md)
+  - [0007 普通副本极速扫荡与体力生命周期管理流水线](./docs/adr/0007-normal-mission-power-sweep-pipeline.md)
 - **逆向协议封包速查表**：[docs/protocol/mod_action_matrix.md](./docs/protocol/mod_action_matrix.md)
 - **系统架构模型与生命周期指南**：[docs/architecture/pipeline_and_lifecycle.md](./docs/architecture/pipeline_and_lifecycle.md)
 - **MCP 逆向与抓包工具链指南**：[docs/tools/mcp_reverse_and_traffic.md](./docs/tools/mcp_reverse_and_traffic.md)
+
 
 
