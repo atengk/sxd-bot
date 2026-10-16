@@ -6,8 +6,9 @@
 @since 2026-10-15
 """
 
+import json
 import struct
-from typing import Optional
+from typing import Any, Optional
 
 
 class ByteArrayReader:
@@ -80,6 +81,24 @@ class ByteArrayReader:
         self._offset += 8
         return val
 
+    def read_bool(self) -> bool:
+        """读取单字节布尔值 (BooleanUtil)"""
+        return self.read_uint8() != 0
+
+    def read_float(self) -> float:
+        """读取 32 位大端 IEEE 754 浮点数 (FloatUtil)"""
+        self._check_bounds(4)
+        val = struct.unpack(">f", self._data[self._offset : self._offset + 4])[0]
+        self._offset += 4
+        return val
+
+    def read_double(self) -> float:
+        """读取 64 位大端 IEEE 754 双精度浮点数 (DoubleUtil)"""
+        self._check_bounds(8)
+        val = struct.unpack(">d", self._data[self._offset : self._offset + 8])[0]
+        self._offset += 8
+        return val
+
     def read_utf(self) -> str:
         """读取 Flash 标准 writeUTF 格式字符串 (16位大端长度 + UTF-8 字节)
 
@@ -93,6 +112,13 @@ class ByteArrayReader:
         raw_bytes = self._data[self._offset : self._offset + length]
         self._offset += length
         return raw_bytes.decode("utf-8", errors="replace")
+
+    def read_json(self) -> Any:
+        """读取 writeUTF 编码的 JSON 结构并自动反序列化 (JSONUtil)"""
+        text = self.read_utf()
+        if not text:
+            return None
+        return json.loads(text)
 
     def read_bytes(self, length: Optional[int] = None) -> bytes:
         """读取指定长度的原始字节序列 (若未指定则读至末尾)"""
@@ -157,6 +183,21 @@ class ByteArrayWriter:
         self._buffer.extend(struct.pack(">q", value))
         return self
 
+    def write_bool(self, value: bool) -> "ByteArrayWriter":
+        """写入单字节布尔值 (BooleanUtil)"""
+        self._buffer.append(1 if value else 0)
+        return self
+
+    def write_float(self, value: float) -> "ByteArrayWriter":
+        """写入 32 位大端 IEEE 754 浮点数 (FloatUtil)"""
+        self._buffer.extend(struct.pack(">f", value))
+        return self
+
+    def write_double(self, value: float) -> "ByteArrayWriter":
+        """写入 64 位大端 IEEE 754 双精度浮点数 (DoubleUtil)"""
+        self._buffer.extend(struct.pack(">d", value))
+        return self
+
     def write_utf(self, value: str) -> "ByteArrayWriter":
         """写入 Flash 标准 writeUTF 格式字符串 (16位大端长度 + UTF-8 字节)"""
         raw_bytes = value.encode("utf-8")
@@ -165,6 +206,11 @@ class ByteArrayWriter:
         self.write_uint16(len(raw_bytes))
         self._buffer.extend(raw_bytes)
         return self
+
+    def write_json(self, value: Any) -> "ByteArrayWriter":
+        """将结构序列化为 JSON 字符串并通过 writeUTF 写入 (JSONUtil)"""
+        text = json.dumps(value, ensure_ascii=False)
+        return self.write_utf(text)
 
     def write_bytes(self, value: bytes) -> "ByteArrayWriter":
         """追加原始二进制切片"""

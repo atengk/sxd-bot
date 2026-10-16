@@ -78,21 +78,35 @@ class FrameFSM:
             raw_payload = bytes(self._buffer[4:total_frame_len])
             del self._buffer[:total_frame_len]
 
-            # 5. 校验并解压 zlib 载荷
-            is_zlib = (
+            # 5. 校验并自适应解压 zlib 载荷 (支持顶层直出模式与 Payload 级压缩模式)
+            is_top_level_zlib = (
                 len(raw_payload) >= 2
                 and raw_payload[0:1] == ZLIB_MAGIC_PREFIX
                 and raw_payload[1] in ZLIB_SECOND_BYTES
             )
 
-            if is_zlib:
+            if is_top_level_zlib:
                 try:
                     decompressed = zlib.decompress(raw_payload)
                     frames.append((decompressed, True))
                 except Exception as exc:
-                    logger.error("zlib 载荷解压失败，丢弃该异常帧: %s", exc)
+                    logger.error("顶层 zlib 载荷解压失败，丢弃该异常帧: %s", exc)
             else:
-                frames.append((raw_payload, False))
+                # 检查是否为 Payload 级压缩 (即前 4 字节为未压缩的 Mod/Act，后续字节命中 zlib 魔数)
+                is_payload_zlib = (
+                    len(raw_payload) >= 6
+                    and raw_payload[4:5] == ZLIB_MAGIC_PREFIX
+                    and raw_payload[5] in ZLIB_SECOND_BYTES
+                )
+                if is_payload_zlib:
+                    try:
+                        decompressed_body = zlib.decompress(raw_payload[4:])
+                        frames.append((raw_payload[:4] + decompressed_body, True))
+                    except Exception as exc:
+                        logger.error("载荷级 zlib 解压失败，回退至原始帧: %s", exc)
+                        frames.append((raw_payload, False))
+                else:
+                    frames.append((raw_payload, False))
 
         return frames
 
