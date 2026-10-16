@@ -11,3 +11,8 @@ config/config.json
 *.pcap
 *.pcapng
 *.log
+
+# Local SQLite databases
+data/*.db
+*.sqlite
+*.sqlite3
