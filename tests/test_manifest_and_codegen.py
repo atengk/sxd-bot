@@ -1,7 +1,7 @@
 """全量 879 模块 Manifest 元数据库与 CLI 代码生成器自动化单元测试
 
 测试覆盖:
-1. all_modules_manifest.json 结构完整性 (880 模块, 8,719 Actions, 13,765 常量)
+1. ProtocolManifest 协议元数据库结构完整性 (880 模块, 8,719 Actions, 13,765 常量)
 2. TYPE_MAPPING 10 大 Flash 基础序列化类型映射覆盖
 3. protocol_codegen.py 动态代码生成与动态 importlib 载入验证
 4. 生成契约类往返编解码 (encode_payload / decode) 精度一致性回归 (Mod 0 Player 与 Mod 1 Town)

@@ -12,7 +12,8 @@ config/config.json
 *.pcapng
 *.log
 
-# Local SQLite databases
+# Local SQLite databases (data/protocol_manifest.db is tracked as read-only manifest)
 data/*.db
+!data/protocol_manifest.db
 *.sqlite
 *.sqlite3

@@ -1,7 +1,7 @@
 """神仙道全量静态协议元数据库 SQLite 驱动与查询仓储
 
-负责将 880 模块、8,719 个 Action 及 13,765 个常量的静态元数据
-在首次冷启动时自动转储为只读 SQLite 数据库，并提供毫秒级全文检索与实体点查仓储接口。
+集中纳管 880 模块、8,719 个 Action 及 13,765 个常量的静态元数据与项目静态配置 (tb_metadata)，
+提供开箱即用的只读 SQLite 连接与毫秒级强类型仓储接口。
 
 @author Ateng
 @since 2026-10-16
@@ -20,7 +20,6 @@ from typing import Dict, List, Optional, Any, Tuple, Iterator
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = os.path.join("data", "protocol_manifest.db")
-DEFAULT_JSON_PATH = os.path.join("protocol", "manifest", "all_modules_manifest.json")
 
 
 @dataclass
@@ -66,16 +65,27 @@ class ConstantMeta:
 
 
 class ProtocolDatabase:
-    """协议字典 SQLite 数据库连接与自检转储引擎
+    """协议字典 SQLite 数据库连接与自检引擎
 
     @author Ateng
     @since 2026-10-16
     """
 
-    def __init__(self, db_path: Optional[str] = None, json_path: Optional[str] = None) -> None:
-        self.db_path = db_path or DEFAULT_DB_PATH
-        self.json_path = json_path or DEFAULT_JSON_PATH
-        self._ensure_ingested()
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        json_path: Optional[str] = None,
+        manifest_path: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        candidate = db_path
+        if not candidate and json_path and json_path.endswith(".db"):
+            candidate = json_path
+        if not candidate and manifest_path and manifest_path.endswith(".db"):
+            candidate = manifest_path
+
+        self.db_path = candidate or DEFAULT_DB_PATH
+        self._ensure_exists()
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
@@ -91,115 +101,13 @@ class ProtocolDatabase:
         """获取安全受管数据库连接别名"""
         return self.connect()
 
-    def _ensure_ingested(self) -> None:
-        """自检数据库完整性，若不存在则自动执行一次性热转储"""
-        if os.path.exists(self.db_path) and os.path.getsize(self.db_path) > 0:
-            logger.debug("协议字典数据库已存在: %s", self.db_path)
-            return
-
-        db_dir = os.path.dirname(self.db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-
-        if not os.path.exists(self.json_path):
-            raise FileNotFoundError(f"协议元数据源 JSON 文件未找到: {self.json_path}")
-
-        logger.info("首次初始化协议字典数据库，正在从 JSON 热转储: %s -> %s", self.json_path, self.db_path)
-        t0 = time.perf_counter()
-
-        with open(self.json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        modules_data = data.get("modules", {})
-
-        conn = sqlite3.connect(self.db_path)
-        try:
-            with conn:
-                # 1. 创建核心元数据表与 B-Tree 索引
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS tb_modules (
-                        module_id INTEGER PRIMARY KEY,
-                        name TEXT NOT NULL,
-                        action_count INTEGER NOT NULL DEFAULT 0,
-                        constant_count INTEGER NOT NULL DEFAULT 0
-                    )
-                    """
-                )
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS tb_actions (
-                        module_id INTEGER NOT NULL,
-                        action_id INTEGER NOT NULL,
-                        name TEXT NOT NULL,
-                        request_types TEXT NOT NULL,
-                        response_types TEXT NOT NULL,
-                        PRIMARY KEY (module_id, action_id)
-                    )
-                    """
-                )
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS tb_constants (
-                        module_id INTEGER NOT NULL,
-                        name TEXT NOT NULL,
-                        value INTEGER NOT NULL,
-                        PRIMARY KEY (module_id, name)
-                    )
-                    """
-                )
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_actions_name ON tb_actions(name)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_actions_mod ON tb_actions(module_id)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_constants_name ON tb_constants(name)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_constants_mod ON tb_constants(module_id)")
-
-                # 2. 批量组装导入批次数据
-                mod_rows = []
-                act_rows = []
-                const_rows = []
-
-                for mod_key, mod_info in modules_data.items():
-                    mod_id = int(mod_info.get("module", mod_key))
-                    mod_name = mod_info.get("name", "")
-                    actions = mod_info.get("actions", {})
-                    constants = mod_info.get("constants", {})
-
-                    mod_rows.append((mod_id, mod_name, len(actions), len(constants)))
-
-                    for act_key, act_info in actions.items():
-                        act_id = int(act_info.get("action", act_key))
-                        act_name = act_info.get("name", "")
-                        req_json = json.dumps(act_info.get("request", []))
-                        resp_json = json.dumps(act_info.get("response", []))
-                        act_rows.append((mod_id, act_id, act_name, req_json, resp_json))
-
-                    for const_name, const_val in constants.items():
-                        const_rows.append((mod_id, str(const_name), int(const_val)))
-
-                # 3. 高性能批量事务写入
-                conn.executemany(
-                    "INSERT OR REPLACE INTO tb_modules VALUES (?, ?, ?, ?)",
-                    mod_rows,
-                )
-                conn.executemany(
-                    "INSERT OR REPLACE INTO tb_actions VALUES (?, ?, ?, ?, ?)",
-                    act_rows,
-                )
-                conn.executemany(
-                    "INSERT OR REPLACE INTO tb_constants VALUES (?, ?, ?)",
-                    const_rows,
-                )
-
-            elapsed = time.perf_counter() - t0
-            logger.info(
-                "协议字典转储完成: %d 模块, %d 动作, %d 常量, 耗时 %.3f 秒",
-                len(mod_rows),
-                len(act_rows),
-                len(const_rows),
-                elapsed,
+    def _ensure_exists(self) -> None:
+        """严格自检数据库完整性，若不存在直接抛出明确异常"""
+        if not os.path.exists(self.db_path) or os.path.getsize(self.db_path) == 0:
+            raise FileNotFoundError(
+                f"协议字典数据库未找到或为空: {self.db_path}。该文件由 Git 仓库直接纳管，请检查数据完整性。"
             )
-        finally:
-            conn.close()
+        logger.debug("协议字典数据库验证成功: %s", self.db_path)
 
 
 class ProtocolRepository:
@@ -345,3 +253,62 @@ class ProtocolRepository:
                 )
                 for r in cursor.fetchall()
             ]
+
+    def get_metadata(self, key: str) -> Optional[Any]:
+        """查询项目通用静态元数据 (自动尝试解析 JSON)"""
+        with self.db.connect() as conn:
+            cursor = conn.execute("SELECT value FROM tb_metadata WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            raw = row["value"]
+            try:
+                return json.loads(raw)
+            except (ValueError, TypeError):
+                return raw
+
+    def set_metadata(self, key: str, value: Any) -> None:
+        """写入或更新项目通用静态元数据"""
+        val_str = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value)
+        with self.db.connect() as conn:
+            with conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS tb_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO tb_metadata (key, value) VALUES (?, ?)",
+                    (key, val_str),
+                )
+
+    def get_reverse_assets(self) -> Optional[Dict[str, Any]]:
+        """获取逆向工程资产配置元数据"""
+        return self.get_metadata("reverse_assets")
+
+    def get_manifest_metadata(self) -> Optional[Dict[str, Any]]:
+        """获取协议全景元数据概况信息"""
+        return self.get_metadata("manifest_metadata")
+
+    def get_full_manifest_dict(self) -> Dict[str, Any]:
+        """按需重构全量协议清单字典 (用于兼容需要旧版全景结构的工具与测试)"""
+        meta = self.get_manifest_metadata() or {}
+        modules: Dict[str, Any] = {}
+        for m in self.list_modules():
+            actions: Dict[str, Any] = {}
+            for a in self.get_actions_by_module(m.module_id):
+                actions[str(a.action_id)] = {
+                    "action": a.action_id,
+                    "name": a.name,
+                    "request": a.request_types,
+                    "response": a.response_types,
+                }
+            constants = self.get_constants_by_module(m.module_id)
+            modules[str(m.module_id)] = {
+                "module": m.module_id,
+                "module_id": m.module_id,
+                "name": m.name,
+                "class_name": f"Mod_{m.name}_Base",
+                "actions": actions,
+                "constants": constants,
+            }
+        return {"metadata": meta, "modules": modules}
+

@@ -1,6 +1,6 @@
 """神仙道全量协议代码与技术文档按需生成器 CLI (Protocol Code Generator)
 
-从 protocol/manifest/all_modules_manifest.json 提取官方元数据，
+从 SQLite 协议元数据库 (data/protocol_manifest.db) 提取官方元数据，
 按需生成标准强类型 Python @dataclass 协议契约代码与 Markdown 规范文档。
 
 支持命令行用法:
@@ -18,6 +18,13 @@ import json
 import os
 import sys
 from typing import Dict, Any, List, Tuple, Union
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from storage.protocol_db import ProtocolRepository
 
 # Flash 基础类型到 Python 类型、序列化方法及反序列化方法的映射字典
 TYPE_MAPPING: Dict[str, Dict[str, str]] = {
@@ -41,20 +48,10 @@ def to_pascal_case(name: str) -> str:
     return "".join(p.capitalize() for p in parts if p)
 
 
-def get_manifest_path() -> str:
-    """定位 Manifest JSON 文件路径"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
-    return os.path.join(project_root, "protocol", "manifest", "all_modules_manifest.json")
-
-
 def load_manifest() -> Dict[str, Any]:
-    """装载全量协议元数据库"""
-    path = get_manifest_path()
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"未找到 Manifest 文件: {path}，请先执行元数据提取脚本。")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """装载全量协议元数据库 (从 SQLite 协议元数据库按需重建)"""
+    repo = ProtocolRepository()
+    return repo.get_full_manifest_dict()
 
 
 def resolve_field_type_desc(field_type: Union[str, list]) -> Tuple[str, str]:
@@ -381,35 +378,53 @@ def main() -> None:
     parser.add_argument("--format", choices=["python", "doc", "all"], default="all", help="生成格式: python, doc 或 all")
 
     args = parser.parse_args()
-
-    manifest = load_manifest()
-    modules = manifest.get("modules", {})
+    repo = ProtocolRepository()
 
     if args.list:
+        modules = repo.list_modules()
         print(f"=== 全量 880 协议模块列表 (共 {len(modules)} 个模块) ===")
-        for mod_id_str, mod_info in modules.items():
-            print(f"Mod {int(mod_id_str):>3}: {mod_info['name']:<25} ({len(mod_info['actions'])} actions, {len(mod_info['constants'])} constants)")
+        for mod in modules:
+            print(f"Mod {mod.module_id:>3}: {mod.name:<25} ({mod.action_count} actions, {mod.constant_count} constants)")
         return
 
-    target_mod_info = None
+    target_mod = None
     if args.mod is not None:
-        target_mod_info = modules.get(str(args.mod))
-        if not target_mod_info:
+        target_mod = repo.get_module(args.mod)
+        if not target_mod:
             print(f"错误: 未找到编号为 {args.mod} 的模块。")
             sys.exit(1)
     elif args.name is not None:
         name_lower = args.name.lower()
-        for mod_info in modules.values():
-            if mod_info["name"].lower() == name_lower or mod_info["class_name"].lower() == name_lower:
-                target_mod_info = mod_info
+        for mod in repo.list_modules():
+            if mod.name.lower() == name_lower or f"mod_{mod.name.lower()}_base" == name_lower:
+                target_mod = mod
                 break
-        if not target_mod_info:
+        if not target_mod:
             print(f"错误: 未找到名称为 '{args.name}' 的模块。")
             sys.exit(1)
     else:
         print("请指定 --mod <编号> 或 --name <名称>，或使用 --list 查看全部模块。")
         parser.print_help()
         return
+
+    actions = {
+        str(a.action_id): {
+            "action": a.action_id,
+            "name": a.name,
+            "request": a.request_types,
+            "response": a.response_types,
+        }
+        for a in repo.get_actions_by_module(target_mod.module_id)
+    }
+    constants = repo.get_constants_by_module(target_mod.module_id)
+    target_mod_info = {
+        "module": target_mod.module_id,
+        "module_id": target_mod.module_id,
+        "name": target_mod.name,
+        "class_name": f"Mod_{target_mod.name}_Base",
+        "actions": actions,
+        "constants": constants,
+    }
 
     mod_id = target_mod_info["module_id"]
     clean_name = target_mod_info["name"].lower()

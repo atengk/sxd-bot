@@ -318,7 +318,8 @@ class GameStorage:
         self.player_id = player_id
 
         # 1. 初始化静态只读协议元数据字典仓储
-        self.protocol_db = ProtocolDatabase(json_path=manifest_path)
+        target_db = manifest_path if manifest_path and manifest_path.endswith(".db") else None
+        self.protocol_db = ProtocolDatabase(db_path=target_db)
         self.protocol = ProtocolRepository(self.protocol_db)
 
         # 2. 初始化角色私有 SQLite 动态数据库与后台写入工作线程

@@ -34,6 +34,11 @@ class TaskResult:
         self.message = message
         self.data = data
 
+    @property
+    def is_success(self) -> bool:
+        """判断任务执行状态是否为成功"""
+        return self.status == TaskStatus.SUCCESS
+
     @classmethod
     def success(cls, message: str = "", data: Optional[Any] = None) -> "TaskResult":
         return cls(TaskStatus.SUCCESS, message, data)
