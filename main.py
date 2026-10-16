@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import sys
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any, Union
 
 # Windows 终端 UTF-8 编码防御，防止乱码
 if sys.platform == "win32":
@@ -26,6 +26,7 @@ if sys.platform == "win32":
 
 from core.context import GameContext
 from core.events import EventBus
+from core.config import AccountConfig, SettingsConfig, AppConfig, ConfigManager
 from network.client import SXDClient
 from network.web_auth import WebAuthFetcher, GatewayCredentials
 from services.query_service import QueryService
@@ -80,51 +81,33 @@ logging.basicConfig(
 logger = logging.getLogger("sxd_bot")
 
 
-def load_config(config_path: str) -> dict:
-    """安全加载配置文件"""
-    if not os.path.exists(config_path):
-        example_path = os.path.join(os.path.dirname(config_path), "config.example.json")
-        if os.path.exists(example_path):
-            logger.warning("配置文件未找到: %s，使用示例配置模板: %s", config_path, example_path)
-            config_path = example_path
-        else:
-            raise FileNotFoundError(f"配置文件不存在: {config_path}")
+def load_config(config_path: str) -> AppConfig:
+    """安全加载配置文件与环境变量
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-async def run_headless_bot(config: dict, mode: str = "once", specific_task: Optional[str] = None) -> None:
-    """启动无头自动化机器人
-
-    Args:
-        config: 运行时配置字典。
-        mode: 运行模式 ('once' 单次巡检并退出, 'daemon' 常驻后台守护)。
-        specific_task: 指定单独执行的业务任务。
+    @author Ateng
+    @since 2026-10-16
     """
-    logger.info("=== 启动神仙道无头自动化引擎 (模式: %s) ===", mode)
+    return ConfigManager.load(config_path)
 
-    # 1. 确定鉴权与网关模式
-    auth_mode = config.get("auth_mode", "static")
-    creds: Optional[GatewayCredentials] = None
 
-    if auth_mode in ("auto", "dynamic"):
-        web_conf = config.get("web_auth", {})
-        username = web_conf.get("username", "")
-        password = web_conf.get("password", "")
-        server = web_conf.get("server", "s813")
-        if username and password:
-            logger.info("采用全自动 Web 登录流程换取新鲜令牌 (用户: %s, 区服: %s)...", username, server)
-            creds = WebAuthFetcher.auto_login(username=username, password=password, server=server)
-        else:
-            login_url = web_conf.get("login_url", "")
-            cookie = web_conf.get("cookie", "")
-            logger.info("正在通过 Web 接口获取登录凭据...")
-            creds = WebAuthFetcher.fetch_dynamic_credentials(login_url, cookie)
+async def run_headless_bot_single_account(
+    account: AccountConfig,
+    settings: SettingsConfig,
+    mode: str = "once",
+    specific_task: Optional[str] = None,
+) -> None:
+    """针对单个账号执行无头自动化流水线
 
+    @author Ateng
+    @since 2026-10-16
+    """
+    logger.info("=== 启动账号自动化流水线: %s (区服: %s, 平台: %s) ===", account.display_name, account.server, account.platform)
+
+    # 1. 动态/静态解析网关认证凭据
+    creds = WebAuthFetcher.resolve_credentials(account)
     if creds is None:
-        logger.info("采用静态配置文件中的网关与鉴权凭据")
-        creds = WebAuthFetcher.from_config_dict(config)
+        logger.error("[%s] 无法解析账号凭据或缺少关键认证信息，跳过本账号", account.display_name)
+        return
 
     # 2. 组装核心上下文与长连接客户端
     ctx = GameContext()
@@ -134,14 +117,14 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
     # 注册全局事件监听 (记录服务端下行公告与广播)
     async def on_broadcast(mod: int, act: int, payload: bytes) -> None:
         if mod == 20 and act == 87:  # 跑马灯公告
-            logger.info("[全服跑马灯广播] Mod=20 Act=87 长度=%d", len(payload))
+            logger.info("[%s 全服跑马灯广播] Mod=20 Act=87 长度=%d", account.display_name, len(payload))
 
     bus.subscribe_all(on_broadcast)
 
     # 3. 建立连接并注册自动化任务
     connected = await client.connect(creds.server_host, creds.server_port)
     if not connected:
-        logger.error("无法建立与游戏网关的连接，退出执行")
+        logger.error("[%s] 无法建立与游戏网关的连接，退出该账号执行", account.display_name)
         return
 
     scheduler = TaskScheduler(client, ctx)
@@ -208,9 +191,9 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
     if specific_task and specific_task != "all":
         if specific_task in task_map:
             scheduler.register(task_map[specific_task])
-            logger.info("已配置单独执行指定任务: %s", specific_task)
+            logger.info("[%s] 已配置单独执行指定任务: %s", account.display_name, specific_task)
         else:
-            logger.warning("未识别的任务指令: %s，支持项: %s", specific_task, list(task_map.keys()))
+            logger.warning("[%s] 未识别的任务指令: %s，支持项: %s", account.display_name, specific_task, list(task_map.keys()))
     else:
         # 默认依序注册全功能日常与战斗流水线 (共 35 大自动化引擎)
         scheduler.register(AssistantTask(is_post_routine=False))  # 前置：小助手状态感知
@@ -249,70 +232,137 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         scheduler.register(AssistantTask(is_post_routine=True))   # 后置：活跃度达峰一键收割宝箱
         scheduler.register(PracticeTask())                        # 收官：角色激活城镇挂机打坐
 
-
     # 注册心跳保活任务
-    auto_conf = config.get("automation", {})
-    if auto_conf.get("enable_heartbeat", True):
-        hb_interval = float(auto_conf.get("heartbeat_interval_sec", 3.0))
-        scheduler.register(HeartbeatTask(interval_sec=hb_interval))
+    if settings.enable_heartbeat:
+        scheduler.register(HeartbeatTask(interval_sec=settings.heartbeat_interval_sec))
 
     try:
         await scheduler.start()
 
         if mode == "once":
             # 等待业务任务充分完成
-            logger.info("单次日常任务流水线执行完毕，准备输出总结战报...")
+            logger.info("[%s] 单次日常任务流水线执行完毕，准备输出总结战报...", account.display_name)
             await asyncio.sleep(2.0)
-            print_execution_summary(ctx, scheduler)
+            print_execution_summary(account, ctx, scheduler)
         else:
-            logger.info("所有后台守护任务已就绪，进入常驻事件监听循环...")
+            logger.info("[%s] 后台守护任务已就绪，保持长连接事件监听...", account.display_name)
             while client.context.is_connected:
                 await asyncio.sleep(1.0)
     except (asyncio.CancelledError, KeyboardInterrupt):
-        logger.info("收到中断信号，开始清理...")
+        logger.info("[%s] 收到中断信号，开始清理...", account.display_name)
+        raise
+    except Exception as exc:
+        logger.error("[%s] 自动化执行出现未捕获异常: %s", account.display_name, exc, exc_info=True)
     finally:
         await scheduler.stop()
         await client.disconnect()
-        logger.info("无头自动化引擎已安全优雅退出")
+        logger.info("[%s] 自动化流水线已安全优雅退出", account.display_name)
 
 
-async def run_query_mode(config: dict, query_target: str, as_json: bool = False) -> None:
-    """启动轻量只读数据查询与态势感知生命周期
+async def run_headless_bot(
+    config: Union[AppConfig, dict],
+    mode: str = "once",
+    specific_task: Optional[str] = None,
+    account_filter: Optional[str] = None,
+) -> None:
+    """启动无头自动化机器人 (支持多账号调度与容器化环境)
 
-    仅完成网络握手与鉴权登录，调用 QueryService 拉取目标只读数据并格式化输出，
-    随后立即安全优雅退出，绝不执行任何日常任务或战斗流水线。
+    Args:
+        config: 运行时配置对象 (AppConfig 或配置字典)。
+        mode: 运行模式 ('once' 单次巡检并退出, 'daemon' 常驻后台守护)。
+        specific_task: 指定单独执行的业务任务。
+        account_filter: 账号过滤器 (别名或用户名，若指定则仅执行该账号)。
+    """
+    logger.info("=== 启动神仙道无头自动化调度引擎 (模式: %s) ===", mode)
+
+    # 1. 归一化为 AppConfig
+    app_config = config if isinstance(config, AppConfig) else ConfigManager.load_from_dict(config)
+
+    # 2. 账号筛选
+    if account_filter and account_filter != "all":
+        target = app_config.find_account(account_filter)
+        if not target:
+            logger.error("未找到匹配过滤条件的账号: '%s'，已知账号: %s", account_filter, [a.display_name for a in app_config.accounts])
+            return
+        target_accounts = [target]
+    else:
+        target_accounts = app_config.enabled_accounts
+
+    if not target_accounts:
+        logger.error("未找到任何启用的账号，请检查配置文件 accounts 节点或 SXD_USERNAME 环境变量")
+        return
+
+    logger.info("当前共就绪 %d 个待执行账号: %s", len(target_accounts), [a.display_name for a in target_accounts])
+
+    # 3. 调度执行
+    if len(target_accounts) == 1 and mode == "daemon":
+        # 单账号常驻守护
+        await run_headless_bot_single_account(
+            target_accounts[0],
+            app_config.settings,
+            mode="daemon",
+            specific_task=specific_task,
+        )
+    elif mode == "daemon":
+        # 多账号串行轮询守护 (Round-Robin)
+        logger.info("检测到多账号常驻守护模式，开启串行轮询引擎 (共 %d 个账号)...", len(target_accounts))
+        while True:
+            for idx, acc in enumerate(target_accounts):
+                logger.info(">>> 开始轮询执行账号 [%d/%d]: %s <<<", idx + 1, len(target_accounts), acc.display_name)
+                try:
+                    await run_headless_bot_single_account(
+                        acc,
+                        app_config.settings,
+                        mode="once",
+                        specific_task=specific_task,
+                    )
+                except (asyncio.CancelledError, KeyboardInterrupt):
+                    logger.info("守护轮询收到中断信号，退出调度")
+                    return
+                except Exception as exc:
+                    logger.error("账号 [%s] 轮询执行异常: %s", acc.display_name, exc)
+                await asyncio.sleep(2.0)
+            logger.info("本轮所有账号日常巡检已完成，休眠 30 分钟后开启下一轮巡检...")
+            await asyncio.sleep(1800)
+    else:
+        # 单次按序串行执行
+        for idx, acc in enumerate(target_accounts):
+            logger.info(">>> 开始执行账号 [%d/%d]: %s <<<", idx + 1, len(target_accounts), acc.display_name)
+            try:
+                await run_headless_bot_single_account(
+                    acc,
+                    app_config.settings,
+                    mode="once",
+                    specific_task=specific_task,
+                )
+            except (asyncio.CancelledError, KeyboardInterrupt):
+                logger.info("执行流水线收到中断信号，中止后续账号")
+                break
+            except Exception as exc:
+                logger.error("账号 [%s] 执行失败: %s", acc.display_name, exc)
+
+            if idx < len(target_accounts) - 1:
+                logger.info("账号 [%s] 流水线结束，冷却 2 秒后切换下一账号...", acc.display_name)
+                await asyncio.sleep(2.0)
+
+
+async def run_query_mode_single_account(
+    account: AccountConfig,
+    query_target: str,
+    as_json: bool = False,
+) -> None:
+    """针对单账号启动轻量只读数据查询与态势感知生命周期
 
     @author Ateng
     @since 2026-10-16
-
-    Args:
-        config: 运行时配置字典。
-        query_target: 查询目标类别 ('assets', 'roles', 'assistant', 'pack', 'all')。
-        as_json: 是否输出为机器可读的标准 JSON 格式。
     """
-    logger.info("=== 启动数据查询与态势感知模式 (目标: %s, JSON: %s) ===", query_target, as_json)
+    logger.info("=== 启动数据查询模式 (账号: %s, 目标: %s, JSON: %s) ===", account.display_name, query_target, as_json)
 
-    # 1. 确定鉴权与网关模式
-    auth_mode = config.get("auth_mode", "static")
-    creds: Optional[GatewayCredentials] = None
-
-    if auth_mode in ("auto", "dynamic"):
-        web_conf = config.get("web_auth", {})
-        username = web_conf.get("username", "")
-        password = web_conf.get("password", "")
-        server = web_conf.get("server", "s813")
-        if username and password:
-            logger.info("采用全自动 Web 登录流程换取新鲜令牌 (用户: %s, 区服: %s)...", username, server)
-            creds = WebAuthFetcher.auto_login(username=username, password=password, server=server)
-        else:
-            login_url = web_conf.get("login_url", "")
-            cookie = web_conf.get("cookie", "")
-            logger.info("正在通过 Web 接口获取登录凭据...")
-            creds = WebAuthFetcher.fetch_dynamic_credentials(login_url, cookie)
-
+    # 1. 动态/静态解析网关认证凭据
+    creds = WebAuthFetcher.resolve_credentials(account)
     if creds is None:
-        logger.info("采用静态配置文件中的网关与鉴权凭据")
-        creds = WebAuthFetcher.from_config_dict(config)
+        logger.error("[%s] 无法解析账号凭据或缺少关键认证信息，跳过查询", account.display_name)
+        return
 
     # 2. 组装核心上下文与长连接客户端
     ctx = GameContext()
@@ -321,7 +371,7 @@ async def run_query_mode(config: dict, query_target: str, as_json: bool = False)
 
     connected = await client.connect(creds.server_host, creds.server_port)
     if not connected:
-        logger.error("无法建立与游戏网关的连接，退出执行")
+        logger.error("[%s] 无法建立与游戏网关的连接，退出查询", account.display_name)
         return
 
     try:
@@ -329,7 +379,7 @@ async def run_query_mode(config: dict, query_target: str, as_json: bool = False)
         login_task = LoginTask(creds)
         login_result = await login_task.execute(client, ctx)
         if not login_result.is_success:
-            logger.error("登录认证失败，无法继续执行查询: %s", login_result.message)
+            logger.error("[%s] 登录认证失败，无法继续执行查询: %s", account.display_name, login_result.message)
             return
 
         # 4. 初始化本地 SQLite 数据库与查询领域服务
@@ -337,6 +387,9 @@ async def run_query_mode(config: dict, query_target: str, as_json: bool = False)
         query_service = QueryService(client=client, context=ctx, player_db=player_db)
 
         # 5. 执行针对性只读查询并格式化输出
+        if not as_json:
+            print(f"\n===== 账号: {account.display_name} (区服: {account.server}) =====")
+
         if query_target == "assets":
             dto = await query_service.query_player_assets()
             if as_json:
@@ -370,17 +423,65 @@ async def run_query_mode(config: dict, query_target: str, as_json: bool = False)
         else:
             logger.warning("查询目标 '%s' 暂未就绪或未识别，支持选项: ['assets', 'roles', 'assistant', 'pack', 'all']", query_target)
 
-
     finally:
         await client.disconnect()
-        logger.info("数据查询完成，长连接已安全优雅断开退出")
+        logger.info("[%s] 数据查询完成，长连接已安全优雅断开退出", account.display_name)
 
 
-def print_execution_summary(ctx: GameContext, scheduler: TaskScheduler) -> None:
+async def run_query_mode(
+    config: Union[AppConfig, dict],
+    query_target: str,
+    as_json: bool = False,
+    account_filter: Optional[str] = None,
+) -> None:
+    """启动轻量只读数据查询与态势感知生命周期 (支持多账号)
+
+    Args:
+        config: 运行时配置对象 (AppConfig 或配置字典)。
+        query_target: 查询目标类别 ('assets', 'roles', 'assistant', 'pack', 'all')。
+        as_json: 是否输出为机器可读的标准 JSON 格式。
+        account_filter: 账号过滤器 (别名或用户名，若为 'all' 则查全部已启用账号，缺省默认查首个账号)。
+    """
+    logger.info("=== 启动数据查询与态势感知模式 (目标: %s, JSON: %s) ===", query_target, as_json)
+
+    # 1. 归一化为 AppConfig
+    app_config = config if isinstance(config, AppConfig) else ConfigManager.load_from_dict(config)
+
+    enabled_accs = app_config.enabled_accounts
+    if not enabled_accs:
+        logger.error("未找到任何启用的账号，无法执行查询")
+        return
+
+    # 2. 确定查询账号列表
+    if account_filter == "all":
+        target_accounts = enabled_accs
+    elif account_filter:
+        target = app_config.find_account(account_filter)
+        if not target:
+            logger.error("未找到匹配过滤条件的账号: '%s'，已知账号: %s", account_filter, [a.display_name for a in app_config.accounts])
+            return
+        target_accounts = [target]
+    else:
+        # 默认只查首个账号
+        target_accounts = [enabled_accs[0]]
+        if len(enabled_accs) > 1 and not as_json:
+            logger.info("当前存在 %d 个启用账号，默认查询首个账号 [%s]。可通过 --account all 查询全部，或 -a <别名> 查询指定账号", len(enabled_accs), enabled_accs[0].display_name)
+
+    # 3. 逐个执行查询
+    for acc in target_accounts:
+        try:
+            await run_query_mode_single_account(acc, query_target=query_target, as_json=as_json)
+        except Exception as exc:
+            logger.error("查询账号 [%s] 数据失败: %s", acc.display_name, exc)
+
+
+def print_execution_summary(account: Optional[AccountConfig], ctx: GameContext, scheduler: TaskScheduler) -> None:
     """打印美化的日常任务战报总结"""
     print("\n" + "=" * 62)
     print("           神仙道无头协议自动化工具 - 全功能战报总结")
     print("=" * 62)
+    if account:
+        print(f"  账号别名: {account.display_name} ({account.server})")
     print(f"  角色昵称: {ctx.player.nickname or '已登录'}")
     print(f"  角色 I D : {ctx.player.player_id}")
     print(f"  角色等级: {ctx.player.level} 级")
@@ -425,6 +526,12 @@ def main() -> None:
         "-c",
         default="config/config.json",
         help="配置文件路径 (默认: config/config.json)",
+    )
+    parser.add_argument(
+        "--account",
+        "-a",
+        default=None,
+        help="指定运行的目标账号别名或用户名 (默认执行所有已启用账号；查询模式下默认查首个账号，传 'all' 表示全部)",
     )
     parser.add_argument(
         "--once",
@@ -472,7 +579,7 @@ def main() -> None:
     # 若指定了 --query 模式，直接进入独立只读查询生命周期并安全退出
     if args.query:
         try:
-            asyncio.run(run_query_mode(config, query_target=args.query, as_json=args.json))
+            asyncio.run(run_query_mode(config, query_target=args.query, as_json=args.json, account_filter=args.account))
         except KeyboardInterrupt:
             logger.info("查询被用户中断")
         return
@@ -480,7 +587,7 @@ def main() -> None:
     mode = "daemon" if args.daemon else "once"
 
     try:
-        asyncio.run(run_headless_bot(config, mode=mode, specific_task=args.task))
+        asyncio.run(run_headless_bot(config, mode=mode, specific_task=args.task, account_filter=args.account))
     except KeyboardInterrupt:
         logger.info("程序正常退出")
 

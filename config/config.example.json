@@ -1,23 +1,25 @@
 {
-  "auth_mode": "static",
-  "static_credentials": {
-    "server_host": "127.0.0.1",
-    "server_port": 8062,
-    "player_name": "YOUR_USERNAME",
-    "hash_code": "YOUR_TOKEN_HASH",
-    "time": "1792065385",
-    "platform": "fengwanyx",
-    "server_id": 25268,
-    "nickname": "YOUR_NICKNAME"
-  },
-  "web_auth": {
-    "login_url": "http://s813.sxd.fengwanyx.com/index_wd.php",
-    "username": "YOUR_ACCOUNT",
-    "cookie": "YOUR_SESSION_COOKIE"
-  },
-  "automation": {
-    "enable_heartbeat": true,
+  "settings": {
     "heartbeat_interval_sec": 3.0,
     "enable_auto_routine": true
-  }
+  },
+  "accounts": [
+    {
+      "alias": "主号",
+      "platform": "fengwanyx",
+      "username": "YOUR_USERNAME",
+      "password": "${SXD_PASSWORD:-YOUR_PASSWORD}",
+      "server": "s813",
+      "enabled": true
+    },
+    {
+      "alias": "其他渠道或官服",
+      "platform": "static",
+      "username": "YOUR_ALT_USERNAME",
+      "server": "s1",
+      "server_host": "9x656.sxdweb.xd.com",
+      "server_port": 8381,
+      "enabled": false
+    }
+  ]
 }

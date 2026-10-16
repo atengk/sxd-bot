@@ -54,8 +54,9 @@ class WebAuthFetcher:
         server: str = "s813",
         app: str = "sxd",
         timeout_sec: float = 10.0,
+        platform: str = "fengwanyx",
     ) -> Optional[GatewayCredentials]:
-        """全自动执行账号登录与网关令牌换取
+        """全自动执行指定平台的账号登录与网关令牌换取
 
         Args:
             username: 平台账号用户名。
@@ -63,103 +64,72 @@ class WebAuthFetcher:
             server: 目标游戏区服代号 (例如 's813')。
             app: 游戏标识 (默认为 'sxd')。
             timeout_sec: 各步骤网络超时秒数。
+            platform: 渠道平台标识 (如 'fengwanyx', 'xd', '360')。
 
         Returns:
             若全流程成功返回包含最新 Token 的 GatewayCredentials，否则返回 None。
         """
-        cookie_jar = http.cookiejar.CookieJar()
-        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookie_jar))
+        from core.config import AccountConfig
+        from network.platforms.registry import PlatformAuthRegistry
 
-        try:
-            # 步骤 1: 平台账号鉴权登录
-            logger.info("执行 Web 登录步骤 1: 账号凭据鉴权 (%s)...", username)
-            login_params = urllib.parse.urlencode({
-                "password": password,
-                "captcha": "",
-                "app": app,
-                "username": username,
-            })
-            login_url = f"http://member.fengwanyx.3fangyuan.com//api/account/login.php?{login_params}"
-            req1 = urllib.request.Request(login_url, headers={
-                "User-Agent": "Shockwave Flash",
-                "x-flash-version": "10,2,153,1",
-            })
+        acc = AccountConfig(
+            alias=username,
+            username=username,
+            password=password,
+            server=server,
+            platform=platform,
+        )
+        provider = PlatformAuthRegistry.get(platform)
+        return provider.auto_login(acc, timeout_sec=timeout_sec)
 
-            with opener.open(req1, timeout=timeout_sec) as resp1:
-                res_body1 = resp1.read().decode("utf-8", errors="replace")
-                data1 = json.loads(res_body1)
-                if not data1.get("username"):
-                    logger.error("Web 登录步骤 1 失败，返回值: %s", res_body1)
-                    return None
+    @staticmethod
+    def resolve_credentials(account: Any) -> Optional[GatewayCredentials]:
+        """根据 AccountConfig 自动解析网关凭据 (动态派发至平台 Provider，失败时回退静态网关)"""
+        from core.config import AccountConfig
+        from network.platforms.registry import PlatformAuthRegistry
 
-            logger.info("Web 登录步骤 1 成功，已获取用户会话 Cookie")
-
-            # 步骤 2: 获取区服入场参数 (play.php)
-            logger.info("执行 Web 登录步骤 2: 拉取区服 %s 入场参数...", server)
-            play_params = urllib.parse.urlencode({
-                "app": app,
-                "server": server,
-                "username": username,
-            })
-            play_url = f"http://member.fengwanyx.3fangyuan.com//api/account/play.php?{play_params}"
-            req2 = urllib.request.Request(play_url, headers={
-                "User-Agent": "Shockwave Flash",
-                "x-flash-version": "10,2,153,1",
-            })
-
-            with opener.open(req2, timeout=timeout_sec) as resp2:
-                res_body2 = resp2.read().decode("utf-8", errors="replace")
-                data2 = json.loads(res_body2)
-                if "hash" not in data2 or "time" not in data2:
-                    logger.error("Web 登录步骤 2 失败，未能获取入场 hash: %s", res_body2)
-                    return None
-
-            logger.info("Web 登录步骤 2 成功，获取临时入场参数")
-
-            # 步骤 3: 向大区主站换取最终网关 IP 与最新 Socket Token (index_wd.php)
-            logger.info("执行 Web 登录步骤 3: 换取目标区服 Socket 网关凭据...")
-            index_query = urllib.parse.urlencode(data2)
-            index_url = f"http://{server}.sxd.fengwanyx.com/index_wd.php?{index_query}"
-            req3 = urllib.request.Request(index_url, headers={
-                "User-Agent": "Shockwave Flash",
-                "x-flash-version": "10,2,153,1",
-            })
-
-            with opener.open(req3, timeout=timeout_sec) as resp3:
-                res_body3 = resp3.read().decode("utf-8", errors="replace")
-
-            # 从页面响应中提取 JSON
-            start_idx = res_body3.find('{"code":1')
-            if start_idx == -1:
-                logger.error("Web 登录步骤 3 失败，页面中未发现成功状态 JSON: %s", res_body3[:300])
-                return None
-
-            obj, _ = JSONDecoder().raw_decode(res_body3[start_idx:])
-            gw_data = obj.get("data", {})
-
-            creds = GatewayCredentials(
-                server_host=gw_data.get("ip", "9x656.sxdweb.xd.com"),
-                server_port=int(gw_data.get("port", 8381)),
-                player_name=gw_data.get("player_name", username),
-                hash_code=gw_data.get("hash_code", ""),
-                time=str(gw_data.get("time", "")),
-                platform="fengwanyx",
-                server_id=25268,
-                nickname="梦一场",
+        if not isinstance(account, AccountConfig):
+            account = AccountConfig(
+                alias=str(account.get("alias", "") if isinstance(account, dict) else ""),
+                username=str(account.get("username", "") if isinstance(account, dict) else ""),
+                password=str(account.get("password", "") if isinstance(account, dict) else ""),
+                server=str(account.get("server", "s813") if isinstance(account, dict) else "s813"),
+                platform=str(account.get("platform", "fengwanyx") if isinstance(account, dict) else "fengwanyx"),
+                server_host=account.get("server_host") if isinstance(account, dict) else None,
+                server_port=account.get("server_port") if isinstance(account, dict) else None,
+                server_id=int(account.get("server_id", 25268)) if isinstance(account, dict) else 25268,
+                hash_code=str(account.get("hash_code", "") if isinstance(account, dict) else ""),
+                time=str(account.get("time", "") if isinstance(account, dict) else ""),
             )
 
-            logger.info(
-                "全自动 Web 登录成功！获取动态网关: %s:%d, 用户: %s, 会话时间戳: %s",
-                creds.server_host,
-                creds.server_port,
-                creds.player_name,
-                creds.time,
+        # 1. 若具备用户名与密码，通过注册表调用对应平台的 Provider 自动登录
+        if account.username and account.password:
+            logger.info("采用平台 [%s] 自动化登录流程换取新鲜令牌 (用户: %s, 区服: %s)...", account.platform, account.username, account.server)
+            creds = WebAuthFetcher.auto_login(
+                username=account.username,
+                password=account.password,
+                server=account.server,
+                platform=account.platform,
             )
-            return creds
+            if creds:
+                return creds
+            logger.warning("平台 [%s] 全自动登录失败，检查是否有静态网关配置兜底...", account.platform)
 
-        except Exception as exc:
-            logger.error("全自动 Web 登录流程异常: %s", exc)
-            return None
+        # 2. 静态直连网关兜底 (适用于未逆向自动登录的平台或纯静态直连)
+        if account.server_host and account.server_port:
+            logger.info("采用静态网关直连配置: %s:%d (平台: %s)", account.server_host, int(account.server_port), account.platform)
+            return GatewayCredentials(
+                server_host=account.server_host,
+                server_port=int(account.server_port),
+                player_name=account.username,
+                hash_code=str(account.hash_code),
+                time=str(account.time),
+                platform=account.platform,
+                server_id=int(account.server_id),
+                nickname=account.alias or account.username,
+            )
+
+        return None
 
     @staticmethod
     def from_config_dict(conf: Dict[str, Any]) -> GatewayCredentials:
@@ -175,3 +145,4 @@ class WebAuthFetcher:
             server_id=int(static_c.get("server_id", 25268)),
             nickname=static_c.get("nickname", ""),
         )
+
