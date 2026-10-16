@@ -7,6 +7,13 @@ FIFO 滚动淘汰策略、强类型领域子仓储以及统一存储门面 GameS
 @since 2026-10-16
 """
 
+from storage.config_db import (
+    ALL_ROUTINES,
+    AccountRecord,
+    ConfigDatabase,
+    RoutineConfigRecord,
+    SystemSettingRecord,
+)
 from storage.facade import (
     AuditLogRepository,
     BattleRecordRepository,
@@ -38,6 +45,12 @@ from storage.worker import (
 )
 
 __all__ = [
+    # 集中配置仓储与多账号持久化
+    "ALL_ROUTINES",
+    "AccountRecord",
+    "RoutineConfigRecord",
+    "SystemSettingRecord",
+    "ConfigDatabase",
     # 静态协议元数据仓储
     "ModuleMeta",
     "ActionMeta",
@@ -65,3 +78,4 @@ __all__ = [
     # 事件总线持久化切面
     "SqliteStorageSubscriber",
 ]
+
