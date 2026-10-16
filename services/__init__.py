@@ -14,6 +14,7 @@ from services.query_models import (
     AssistantDailyDTO,
     InventoryItemDTO,
     PackSummaryDTO,
+    FullTelemetryDTO,
 )
 from services.query_formatter import QueryFormatter
 from services.query_service import QueryService
@@ -26,8 +27,10 @@ __all__ = [
     "AssistantDailyDTO",
     "InventoryItemDTO",
     "PackSummaryDTO",
+    "FullTelemetryDTO",
     "QueryFormatter",
     "QueryService",
 ]
+
 
 

@@ -8,7 +8,14 @@
 
 import json
 from typing import Any, Dict, List
-from services.query_models import PlayerAssetDTO, RoleDTO, AssistantDailyDTO, PackSummaryDTO
+from services.query_models import (
+    PlayerAssetDTO,
+    RoleDTO,
+    AssistantDailyDTO,
+    PackSummaryDTO,
+    FullTelemetryDTO,
+)
+
 
 
 
@@ -171,5 +178,86 @@ class QueryFormatter:
             "data": dto.to_dict(),
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def format_all_table(dto: FullTelemetryDTO) -> str:
+        """格式化全景综合态势大看板表格"""
+        lines = [
+            "=" * 76,
+            "              神仙道全景综合态势大看板 (Full Telemetry)",
+            "=" * 76,
+        ]
+
+        # 1. 基础资产板块
+        if dto.assets:
+            lines.append("【一、角色全景资产概况】")
+            lines.append(f"  角色昵称: {dto.assets.nickname or '已登录角色'} (ID: {dto.assets.player_id}) | Lv.{dto.assets.level} (VIP {dto.assets.vip_level})")
+            lines.append(f"  持有财富: 铜钱 {dto.assets.coins:,} | 绑定元宝 {dto.assets.ingots:,} [受最高安全防护]")
+            lines.append(f"  行动体力: {dto.assets.power} / {dto.assets.max_power} 点 | 角色声望: {dto.assets.fame:,}")
+            lines.append("-" * 76)
+        elif "assets" in dto.errors:
+            lines.append(f"  [资产板块暂不可用: {dto.errors['assets']}]")
+            lines.append("-" * 76)
+
+        # 2. 参战伙伴阵容板块
+        if dto.roles:
+            lines.append("【二、参战伙伴阵容态势】")
+            role_strs = []
+            for r in dto.roles:
+                deploy = "出战" if r.is_deployed else "待命"
+                role_strs.append(f"{r.name} (Lv.{r.level}, {deploy})")
+            lines.append("  阵容: " + " | ".join(role_strs))
+            lines.append("-" * 76)
+        elif "roles" in dto.errors:
+            lines.append(f"  [伙伴板块暂不可用: {dto.errors['roles']}]")
+            lines.append("-" * 76)
+        else:
+            lines.append("【二、参战伙伴阵容态势】")
+            lines.append("  (暂无出战伙伴数据)")
+            lines.append("-" * 76)
+
+        # 3. 小助手日常矩阵与活跃度板块
+        if dto.assistant:
+            lines.append("【三、小助手日常进度与活跃度】")
+            lines.append(f"  今日活跃度进度 : {dto.assistant.current_liveness} / {dto.assistant.max_liveness} 点")
+            comp_cnt = sum(1 for it in dto.assistant.items if it.is_completed)
+            lines.append(f"  日常玩法完成度 : 已达成 {comp_cnt} / {len(dto.assistant.items)} 项")
+            if dto.assistant.boxes:
+                box_strs = [f"第{b.box_id}档({b.required_liveness}点):[{b.status_desc}]" for b in dto.assistant.boxes]
+                lines.append("  宝箱状态 : " + " | ".join(box_strs))
+            lines.append("-" * 76)
+        elif "assistant" in dto.errors:
+            lines.append(f"  [小助手板块暂不可用: {dto.errors['assistant']}]")
+            lines.append("-" * 76)
+
+        # 4. 背包与仓库战略储备板块
+        if dto.pack:
+            lines.append("【四、主背包与随身仓库盘点】")
+            warn_str = "[空间紧张]" if dto.pack.is_space_low else "[空间充裕]"
+            lines.append(f"  主背包容量 : {dto.pack.pack_used} / {dto.pack.pack_capacity} 格 (剩余 {dto.pack.pack_empty} 空格) {warn_str}")
+            lines.append(f"  随身仓库   : {dto.pack.warehouse_used} / {dto.pack.warehouse_capacity} 格 (剩余 {dto.pack.warehouse_empty} 空格)")
+            lines.append(f"  战略总储备 : 可补充体力: +{dto.pack.total_potential_power} 点 | 潜在经验: +{dto.pack.total_potential_exp:,} 点")
+            if dto.pack.category_counts:
+                cat_str = " | ".join(f"{k}: {v}件" for k, v in dto.pack.category_counts.items())
+                lines.append(f"  大类统计   : {cat_str}")
+            lines.append("=" * 76)
+        elif "pack" in dto.errors:
+            lines.append(f"  [背包板块暂不可用: {dto.errors['pack']}]")
+            lines.append("=" * 76)
+        else:
+            lines.append("=" * 76)
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def format_all_json(dto: FullTelemetryDTO) -> str:
+        """导出全景综合态势数据为标准 JSON 字符串"""
+        payload = {
+            "status": "success",
+            "type": "all",
+            "data": dto.to_dict(),
+        }
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+
 
 

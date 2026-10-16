@@ -23,7 +23,9 @@ from services.query_models import (
     AssistantLivenessBoxDTO,
     InventoryItemDTO,
     PackSummaryDTO,
+    FullTelemetryDTO,
 )
+
 from storage.player_db import (
     PlayerDatabase,
     PlayerProfileRecord,
@@ -472,5 +474,65 @@ class QueryService:
                 logger.warning("本地 SQLite 背包快照写入失败 (非致命): %s", e)
 
         return dto
+
+    async def query_all(self, timeout_sec: float = 3.0) -> FullTelemetryDTO:
+        """全景综合态势感知查询 (聚合四大板块并支持全链路优雅降级)
+
+        并发/依序拉取角色资产、参战伙伴、小助手日常矩阵与背包战略储备。
+        当单一模块发生异常或超时时，自动隔离错误并记录至 errors，其余模块正常返回交付。
+
+        @author Ateng
+        @since 2026-10-16
+
+        Args:
+            timeout_sec: 每个模块的网络超时秒数。
+
+        Returns:
+            全景综合态势强类型传输对象。
+        """
+        logger.info("正在执行神仙道全景综合态势感知聚合查询 (--query all)...")
+
+        assets: Optional[PlayerAssetDTO] = None
+        roles: List[RoleDTO] = []
+        assistant: Optional[AssistantDailyDTO] = None
+        pack: Optional[PackSummaryDTO] = None
+        errors: Dict[str, str] = {}
+
+        # 1. 资产查询
+        try:
+            assets = await self.query_player_assets(timeout_sec=timeout_sec)
+        except Exception as exc:
+            logger.warning("全景查询中角色基础资产模块异常降级: %s", exc)
+            errors["assets"] = str(exc)
+
+        # 2. 伙伴查询
+        try:
+            roles = await self.query_roles(timeout_sec=timeout_sec)
+        except Exception as exc:
+            logger.warning("全景查询中参战伙伴阵容模块异常降级: %s", exc)
+            errors["roles"] = str(exc)
+
+        # 3. 小助手查询
+        try:
+            assistant = await self.query_assistant(timeout_sec=timeout_sec)
+        except Exception as exc:
+            logger.warning("全景查询中小助手日常矩阵模块异常降级: %s", exc)
+            errors["assistant"] = str(exc)
+
+        # 4. 背包盘点查询
+        try:
+            pack = await self.query_pack(timeout_sec=timeout_sec)
+        except Exception as exc:
+            logger.warning("全景查询中主背包与仓库盘点模块异常降级: %s", exc)
+            errors["pack"] = str(exc)
+
+        return FullTelemetryDTO(
+            assets=assets,
+            roles=roles,
+            assistant=assistant,
+            pack=pack,
+            errors=errors,
+        )
+
 
 

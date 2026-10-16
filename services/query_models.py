@@ -235,3 +235,31 @@ class PackSummaryDTO:
         }
 
 
+@dataclass
+class FullTelemetryDTO:
+    """神仙道全景综合态势传输模型
+
+    聚合玩家资产、参战伙伴、小助手日常矩阵、背包与仓库战略储备以及各子模块错误隔离记录。
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    assets: Optional[PlayerAssetDTO] = None
+    roles: List[RoleDTO] = field(default_factory=list)
+    assistant: Optional[AssistantDailyDTO] = None
+    pack: Optional[PackSummaryDTO] = None
+    errors: Dict[str, str] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为标准全景字典"""
+        return {
+            "assets": self.assets.to_dict() if self.assets else None,
+            "roles": [r.to_dict() for r in self.roles],
+            "assistant": self.assistant.to_dict() if self.assistant else None,
+            "pack": self.pack.to_dict() if self.pack else None,
+            "errors": self.errors,
+        }
+
+
+

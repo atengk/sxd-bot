@@ -31,7 +31,9 @@ from services.query_models import (
     AssistantLivenessBoxDTO,
     InventoryItemDTO,
     PackSummaryDTO,
+    FullTelemetryDTO,
 )
+
 from services.query_service import QueryService
 from services.query_formatter import QueryFormatter
 from protocol.messages.role import RoleGetRoleListReq, RoleGetRoleListResp
@@ -710,6 +712,151 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
             self.assertIn("高级体力丹", output)
 
 
+    # ==================== 10. 全景综合态势大看板 (--query all) 测试 ====================
+
+    def test_full_telemetry_dto_to_dict(self) -> None:
+        """验证 FullTelemetryDTO 聚合实体与字典序列化"""
+        assets = PlayerAssetDTO(player_id=8888, nickname="全景大侠", level=100)
+        roles = [RoleDTO(role_id=1, name="巨灵神", level=90)]
+        assistant = AssistantDailyDTO(current_liveness=60)
+        pack = PackSummaryDTO(pack_capacity=48, pack_empty=5)
+
+        dto = FullTelemetryDTO(
+            assets=assets,
+            roles=roles,
+            assistant=assistant,
+            pack=pack,
+            errors={"test_module": "网络超时"},
+        )
+
+        d = dto.to_dict()
+        self.assertIn("assets", d)
+        self.assertEqual(d["assets"]["nickname"], "全景大侠")
+        self.assertEqual(len(d["roles"]), 1)
+        self.assertEqual(d["roles"][0]["name"], "巨灵神")
+        self.assertEqual(d["assistant"]["current_liveness"], 60)
+        self.assertEqual(d["pack"]["pack_capacity"], 48)
+        self.assertIn("test_module", d["errors"])
+
+    async def test_query_all_service_success(self) -> None:
+        """验证 QueryService.query_all 全链路成功聚合四大子系统数据"""
+        service = QueryService(self.client, self.ctx, self.player_db)
+        mock_asset = PlayerAssetDTO(player_id=8888, nickname="逍遥剑仙", level=120)
+        mock_roles = [RoleDTO(role_id=1, name="巨灵神", level=100)]
+        mock_assistant = AssistantDailyDTO(current_liveness=80)
+        mock_pack = PackSummaryDTO(pack_capacity=48, pack_used=40, pack_empty=8)
+
+        service.query_player_assets = AsyncMock(return_value=mock_asset)
+        service.query_roles = AsyncMock(return_value=mock_roles)
+        service.query_assistant = AsyncMock(return_value=mock_assistant)
+        service.query_pack = AsyncMock(return_value=mock_pack)
+
+        telemetry = await service.query_all()
+        self.assertEqual(telemetry.assets.nickname, "逍遥剑仙")
+        self.assertEqual(len(telemetry.roles), 1)
+        self.assertEqual(telemetry.assistant.current_liveness, 80)
+        self.assertEqual(telemetry.pack.pack_capacity, 48)
+        self.assertEqual(len(telemetry.errors), 0)
+
+    async def test_query_all_service_graceful_degradation(self) -> None:
+        """验证 QueryService.query_all 单模块超时异常时的优雅降级与错误隔离"""
+        service = QueryService(self.client, self.ctx, self.player_db)
+        mock_asset = PlayerAssetDTO(player_id=8888, nickname="坚韧修士", level=100)
+        mock_roles = [RoleDTO(role_id=1, name="小师妹", level=80)]
+        mock_pack = PackSummaryDTO(pack_capacity=48, pack_empty=10)
+
+        service.query_player_assets = AsyncMock(return_value=mock_asset)
+        service.query_roles = AsyncMock(return_value=mock_roles)
+        # 模拟小助手服务出现网络超时异常
+        service.query_assistant = AsyncMock(side_effect=TimeoutError("小助手服务端无响应"))
+        service.query_pack = AsyncMock(return_value=mock_pack)
+
+        # 核心防线验证：单点故障绝不导致 query_all 崩溃，未故障模块正常交付
+        telemetry = await service.query_all()
+        self.assertEqual(telemetry.assets.nickname, "坚韧修士")
+        self.assertEqual(len(telemetry.roles), 1)
+        self.assertIsNone(telemetry.assistant)  # 异常模块降级为空
+        self.assertEqual(telemetry.pack.pack_capacity, 48)
+        self.assertIn("assistant", telemetry.errors)
+        self.assertIn("小助手服务端无响应", telemetry.errors["assistant"])
+
+    def test_query_formatter_all_table_and_json(self) -> None:
+        """验证 QueryFormatter 输出综合大看板表格与 JSON"""
+        assets = PlayerAssetDTO(player_id=8888, nickname="综合大侠", level=120, coins=1000000, ingots=888)
+        roles = [RoleDTO(role_id=1, name="九凤", level=110, is_deployed=True)]
+        assistant = AssistantDailyDTO(current_liveness=75)
+        pack = PackSummaryDTO(pack_capacity=48, pack_empty=6, total_potential_power=200)
+
+        # 1. 正常完整看板
+        dto = FullTelemetryDTO(assets=assets, roles=roles, assistant=assistant, pack=pack)
+        table = QueryFormatter.format_all_table(dto)
+        self.assertIn("神仙道全景综合态势大看板", table)
+        self.assertIn("综合大侠", table)
+        self.assertIn("九凤", table)
+        self.assertIn("今日活跃度进度 : 75", table)
+        self.assertIn("主背包容量", table)
+
+        # 2. 存在模块降级时的看板容错展示
+        dto_degraded = FullTelemetryDTO(
+            assets=assets,
+            roles=roles,
+            assistant=None,
+            pack=pack,
+            errors={"assistant": "网络超时"},
+        )
+        table_degraded = QueryFormatter.format_all_table(dto_degraded)
+        self.assertIn("神仙道全景综合态势大看板", table_degraded)
+        self.assertIn("[小助手板块暂不可用: 网络超时]", table_degraded)
+
+        # 3. JSON 格式化导出
+        json_str = QueryFormatter.format_all_json(dto)
+        data = json.loads(json_str)
+        self.assertEqual(data["status"], "success")
+        self.assertEqual(data["type"], "all")
+        self.assertIn("assets", data["data"])
+        self.assertIn("roles", data["data"])
+
+    async def test_run_query_mode_all_and_invalid_target(self) -> None:
+        """验证 main.py run_query_mode query_target='all' 与非法参数防御"""
+        from io import StringIO
+        import sys
+        from unittest.mock import patch
+        from main import run_query_mode
+
+        config = {
+            "auth_mode": "static",
+            "server": {"host": "127.0.0.1", "port": 8000},
+            "credentials": {"player_name": "test_user", "server_id": 1},
+        }
+
+        # 1. 验证 query_target="all"
+        captured_out = StringIO()
+        with patch.object(SXDClient, "connect", new=AsyncMock(return_value=True)), \
+             patch.object(SXDClient, "disconnect", new=AsyncMock(return_value=None)), \
+             patch("main.LoginTask.execute", new=AsyncMock(return_value=MagicMock(is_success=True))), \
+             patch.object(QueryService, "query_all", new=AsyncMock(return_value=FullTelemetryDTO(
+                 assets=PlayerAssetDTO(player_id=8888, nickname="综合验收员"),
+                 roles=[],
+                 assistant=None,
+                 pack=None,
+             ))), \
+             patch.object(sys, "stdout", captured_out):
+            await run_query_mode(config, query_target="all", as_json=False)
+            output = captured_out.getvalue()
+            self.assertIn("神仙道全景综合态势大看板", output)
+            self.assertIn("综合验收员", output)
+
+        # 2. 验证非法 query_target 防御与提示
+        captured_err = StringIO()
+        with patch.object(SXDClient, "connect", new=AsyncMock(return_value=True)), \
+             patch.object(SXDClient, "disconnect", new=AsyncMock(return_value=None)), \
+             patch("main.LoginTask.execute", new=AsyncMock(return_value=MagicMock(is_success=True))), \
+             patch("main.logger.warning") as mock_warn:
+            await run_query_mode(config, query_target="invalid_target", as_json=False)
+            mock_warn.assert_called()
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
