@@ -44,6 +44,28 @@ class EventBus:
         """订阅全量应用级通用事件广播"""
         self._global_app_listeners.append(handler)
 
+    def unsubscribe_event(self, event_type: str, handler: Callable) -> None:
+        """注销指定应用事件的监听器
+
+        Args:
+            event_type: 事件主题/类型。
+            handler: 回调函数引用。
+        """
+        if event_type in self._app_listeners:
+            self._app_listeners[event_type] = [
+                h for h in self._app_listeners[event_type] if h != handler
+            ]
+
+    def unsubscribe_all_events(self, handler: Callable) -> None:
+        """注销全量应用事件的全局监听器
+
+        Args:
+            handler: 回调函数引用。
+        """
+        self._global_app_listeners = [
+            h for h in self._global_app_listeners if h != handler
+        ]
+
     def publish(self, event_type: str, data: Any = None) -> None:
         """向所有已订阅应用事件的监听器分发事件 (非阻塞，支持同步与异步回调)
 

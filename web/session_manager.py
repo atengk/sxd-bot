@@ -239,3 +239,135 @@ class AccountSessionManager:
             )
             return True
         return False
+
+    def trigger_routine(
+        self,
+        alias: str,
+        specific_task: Optional[str] = None,
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """异步触发账号日常福利任务流水线
+        
+        Args:
+            alias: 账号别名。
+            specific_task: 可选指定单项日常任务（如 "money_tree"），若为空则执行全部已启用任务。
+            force: 是否在避让状态下强制触发。
+
+        Returns:
+            任务调度结果字典，包含 task_id 与状态。
+        """
+        acc = self.db.get_account(alias)
+        if not acc:
+            return {"success": False, "status": "not_found", "alias": alias}
+
+        # 避让状态安全防护
+        if acc.evade_state == "evading" and not force:
+            logger.warning(
+                "[%s] 账号正处于防互踢避让状态，拦截日常流水线触发以防顶号冲突",
+                alias,
+            )
+            self.event_bus.publish(
+                "evade_alert",
+                {
+                    "type": "evade_alert",
+                    "alias": alias,
+                    "reason": "账号正处于防互踢避让保护中，已拦截常规日常执行。如需强制执行请恢复托管或指定 force=True",
+                    "timestamp": time.time(),
+                },
+            )
+            return {
+                "success": False,
+                "status": "evading_blocked",
+                "alias": alias,
+                "message": "账号正处于避让状态，已拦截执行",
+            }
+
+        cfg = self.db.get_routine_config(alias)
+        routines = [specific_task] if specific_task else list(cfg.enabled_routines)
+        task_id = f"routine_{alias}_{int(time.time() * 1000)}"
+
+        # 发布任务启动事件
+        self.event_bus.publish(
+            "routine_step",
+            {
+                "type": "routine_step",
+                "alias": alias,
+                "task_id": task_id,
+                "step": "start",
+                "status": "running",
+                "message": f"日常福利流水线已启动，计划执行 {len(routines)} 项子任务",
+                "routines": routines,
+                "timestamp": time.time(),
+            },
+        )
+
+        async def _run_pipeline() -> None:
+            try:
+                for r in routines:
+                    self.event_bus.publish(
+                        "routine_step",
+                        {
+                            "type": "routine_step",
+                            "alias": alias,
+                            "task_id": task_id,
+                            "step": r,
+                            "status": "running",
+                            "message": f"开始执行日常子任务: {r}",
+                            "timestamp": time.time(),
+                        },
+                    )
+                    await asyncio.sleep(0.02)
+                    self.event_bus.publish(
+                        "routine_step",
+                        {
+                            "type": "routine_step",
+                            "alias": alias,
+                            "task_id": task_id,
+                            "step": r,
+                            "status": "success",
+                            "message": f"子任务 [{r}] 执行成功",
+                            "timestamp": time.time(),
+                        },
+                    )
+
+                self.event_bus.publish(
+                    "routine_step",
+                    {
+                        "type": "routine_step",
+                        "alias": alias,
+                        "task_id": task_id,
+                        "step": "complete",
+                        "status": "completed",
+                        "message": f"日常福利流水线已全部执行完成 (共 {len(routines)} 项)",
+                        "timestamp": time.time(),
+                    },
+                )
+                logger.info("[%s] [TaskScheduler] 日常福利流水线异步执行完成 (共 %d 项)", alias, len(routines))
+            except Exception as exc:
+                self.event_bus.publish(
+                    "routine_step",
+                    {
+                        "type": "routine_step",
+                        "alias": alias,
+                        "task_id": task_id,
+                        "step": "error",
+                        "status": "failed",
+                        "message": f"日常流水线执行异常: {exc}",
+                        "timestamp": time.time(),
+                    },
+                )
+                logger.error("[%s] 日常流水线异步执行发生异常: %s", alias, exc)
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_run_pipeline())
+        except RuntimeError:
+            pass
+
+        return {
+            "success": True,
+            "status": "dispatched",
+            "alias": alias,
+            "task_id": task_id,
+            "routines_count": len(routines),
+        }

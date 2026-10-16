@@ -114,6 +114,9 @@ def create_app(
     """
     from web.session_manager import AccountSessionManager
     from web.routes.accounts import router as accounts_router
+    from web.routes.routines import router as routines_router
+    from web.routes.events import router as events_router
+    from web.logging_bridge import attach_log_bridge
 
     app = FastAPI(
         title="神仙道无头协议自动化控制台",
@@ -128,6 +131,13 @@ def create_app(
         if session_manager is not None
         else AccountSessionManager(db=app.state.db)
     )
+
+    # 挂载受管日志桥接器至当前 session_manager 的 event_bus (防范日志风暴，限定业务日志器)
+    if hasattr(app.state.session_manager, "event_bus"):
+        app.state.log_bridge = attach_log_bridge(
+            app.state.session_manager.event_bus,
+            logger_name="sxd_bot",
+        )
 
     # 1. 注册健康检查探针 (无需鉴权)
     @app.get("/api/health", tags=["System"])
@@ -159,6 +169,12 @@ def create_app(
 
     # 3. 注册多账号管理业务路由器
     app.include_router(accounts_router)
+
+    # 4. 注册 35 项日常任务配置与流水线触发路由器
+    app.include_router(routines_router)
+
+    # 5. 注册 SSE 实时事件与日志推送路由器
+    app.include_router(events_router)
 
     # 4. 注册额外外部业务路由器
     if routers:
