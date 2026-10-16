@@ -6,7 +6,7 @@
 @since 2026-10-15
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from protocol.packet import BasePacket, ByteArrayReader, ByteArrayWriter
 
 
@@ -244,3 +244,66 @@ class PlayerInfoResp(BasePacket):
             mission_key=mission_key,
             raw_payload=data,
         )
+
+
+@dataclass
+class PlayerBuyPowerReq(BasePacket):
+    """消耗元宝购买体力请求 (Mod 0, Act 5) - [HAZARDOUS_INGOT]
+
+    强制前置安全红线守卫拦截，防止未经授权意外扣除元宝。
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    allow_ingot: bool = False
+
+    def __init__(self, allow_ingot: bool = False) -> None:
+        super().__init__(mod=0, act=5)
+        if not allow_ingot:
+            raise PermissionError("[HAZARDOUS_INGOT] buy_power 涉及元宝扣除，已触发安全熔断保护！若确认执行请显式设置 allow_ingot=True")
+        self.allow_ingot = allow_ingot
+
+    def encode_payload(self) -> bytes:
+        return b""
+
+    @classmethod
+    def decode(cls, data: bytes) -> "PlayerBuyPowerReq":
+        return cls(allow_ingot=True)
+
+
+@dataclass
+class PlayerUpdatePlayerDataResp(BasePacket):
+    """角色基础与高阶数值变更广播 (Mod 0, Act 3) - [SAFE_READ]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    updates: dict = field(default_factory=dict)
+
+    def __init__(self, updates: Optional[dict] = None) -> None:
+        super().__init__(mod=0, act=3)
+        self.updates = updates or {}
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_uint16(len(self.updates))
+        for prop_id, val in sorted(self.updates.items()):
+            writer.write_uint8(prop_id)
+            writer.write_int64(val)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "PlayerUpdatePlayerDataResp":
+        reader = ByteArrayReader(data)
+        count = reader.read_uint16() if reader.remaining >= 2 else 0
+        updates = {}
+        for _ in range(count):
+            if reader.remaining < 9:
+                break
+            prop_id = reader.read_uint8()
+            val = reader.read_int64()
+            updates[prop_id] = val
+        return cls(updates=updates)
+
