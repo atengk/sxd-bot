@@ -245,6 +245,96 @@ class TestWebAccountsApi(unittest.TestCase):
             data_fail = res_fail.json()
             self.assertFalse(data_fail["success"])
 
+    def test_evade_all_and_resume_all_endpoints(self) -> None:
+        """测试 POST /api/accounts/evade/all 与 POST /api/accounts/resume/all 批量避让恢复"""
+        # 1. 批量触发避让
+        resp_evade = self.client.post("/api/accounts/evade/all")
+        self.assertEqual(resp_evade.status_code, 200)
+        evade_data = resp_evade.json()
+        self.assertTrue(evade_data["success"])
+        self.assertGreaterEqual(evade_data["evaded_count"], 1)
+
+        # 2. 查询列表验证避让状态与倒计时字段
+        resp_list = self.client.get("/api/accounts")
+        self.assertEqual(resp_list.status_code, 200)
+        items = resp_list.json()
+        main_acc = next(acc for acc in items if acc["alias"] == "主号")
+        self.assertEqual(main_acc["evade_state"], "evading")
+        self.assertFalse(main_acc["hosting_enabled"])
+        self.assertEqual(main_acc["evade_reason"], "用户手动全员避让")
+        self.assertIsNotNone(main_acc["evade_probe_at"])
+
+        # 3. 批量恢复托管
+        resp_resume = self.client.post("/api/accounts/resume/all")
+        self.assertEqual(resp_resume.status_code, 200)
+        resume_data = resp_resume.json()
+        self.assertTrue(resume_data["success"])
+        self.assertGreaterEqual(resume_data["resumed_count"], 1)
+
+        # 4. 再次验证状态已清除并恢复长连接托管开启
+        resp_list2 = self.client.get("/api/accounts")
+        items2 = resp_list2.json()
+        main_acc2 = next(acc for acc in items2 if acc["alias"] == "主号")
+        self.assertEqual(main_acc2["evade_state"], "none")
+        self.assertTrue(main_acc2["hosting_enabled"])
+
+    def test_single_account_evade_endpoint(self) -> None:
+        """测试 POST /api/accounts/{alias}/hosting/evade 单账号主动避让"""
+        resp = self.client.post("/api/accounts/主号/hosting/evade")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["success"])
+
+        info = self.session_manager.get_session_info("主号")
+        self.assertEqual(info["evade_state"], "evading")
+        self.assertEqual(info["evade_reason"], "用户手动避让")
+        self.assertIsNotNone(info["evade_probe_at"])
+
+    def test_single_account_inventory_clean_endpoint(self) -> None:
+        """测试 POST /api/accounts/{alias}/inventory/clean 一键清理背包端点"""
+        from unittest.mock import patch, AsyncMock
+
+        mock_clean_res = {
+            "success": True,
+            "message": "背包四阶自理完成: 剩余 12 格 (使用 2 件, 存仓 3 件, 变卖 1 件)",
+            "result": {"empty_grids": 12},
+        }
+
+        with patch.object(self.session_manager, "clean_inventory", new_callable=AsyncMock) as mock_clean:
+            mock_clean.return_value = mock_clean_res
+
+            resp = self.client.post(
+                "/api/accounts/主号/inventory/clean",
+                json={"target_empty": 5, "force_all": True},
+            )
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data["success"])
+            self.assertIn("背包四阶自理完成", data["message"])
+            mock_clean.assert_called_once_with(alias="主号", target_empty=5, force_all=True)
+
+    def test_single_account_inventory_use_all_endpoint(self) -> None:
+        """测试 POST /api/accounts/{alias}/inventory/use-all 一键使用背包物品端点"""
+        from unittest.mock import patch, AsyncMock
+
+        mock_use_res = {
+            "success": True,
+            "message": "一键使用消耗品与宝箱完毕: 剩余 8 格 (开箱/吃丹 5 件)",
+            "data": {"empty_grids": 8, "items_used": 5},
+        }
+
+        with patch.object(self.session_manager, "use_all_inventory", new_callable=AsyncMock) as mock_use:
+            mock_use.return_value = mock_use_res
+
+            resp = self.client.post("/api/accounts/主号/inventory/use-all")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+            self.assertTrue(data["success"])
+            self.assertIn("一键使用消耗品与宝箱完毕", data["message"])
+            mock_use.assert_called_once_with(alias="主号")
+
+
 
 if __name__ == "__main__":
     unittest.main()
+

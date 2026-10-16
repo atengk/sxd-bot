@@ -19,10 +19,11 @@
     })();
   </script>
 
-  <!-- Tailwind CSS 配置与运行时 (强制 class selector 模式) -->
+  <!-- Tailwind CSS 运行时与配置 (先加载 CDN 运行时，再配置 tailwind.config 以便触发 Proxy setter 生成 .dark 类选择器) -->
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
   <script>
     window.tailwind = window.tailwind || {};
-    window.tailwind.config = {
+    tailwind.config = {
       darkMode: 'class',
       theme: {
         extend: {
@@ -38,7 +39,6 @@
       }
     };
   </script>
-  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
 
   <!-- Element Plus 现代化组件库 CSS (含原生 Dark Mode CSS 变量) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-plus/dist/index.css" />
@@ -165,6 +165,93 @@
     html.dark .el-notification__content {
       color: #94a3b8 !important;
     }
+    /* 暗黑模式高对比度与材质层次强化 (保底纯 CSS 隔离，100% 免疫 CDN 编译延迟，明亮模式零干扰) */
+    html.dark .themed-card h1,
+    html.dark .themed-card h2,
+    html.dark .themed-card h3,
+    html.dark .themed-header h1 {
+      color: #f8fafc !important;
+    }
+    html.dark .themed-card .text-slate-800,
+    html.dark .themed-header .text-slate-800 {
+      color: #f8fafc !important;
+    }
+    html.dark .themed-card .text-slate-700,
+    html.dark .themed-header .text-slate-700 {
+      color: #e2e8f0 !important;
+    }
+    html.dark .themed-card .text-slate-500,
+    html.dark .themed-header .text-slate-500 {
+      color: #94a3b8 !important;
+    }
+    html.dark .themed-card .border-slate-200,
+    html.dark .themed-header .border-slate-200 {
+      border-color: #1e293b !important;
+    }
+    html.dark .themed-card .border-slate-300,
+    html.dark .themed-header .border-slate-300 {
+      border-color: #334155 !important;
+    }
+    html.dark .themed-card .bg-slate-200 {
+      background-color: #1e293b !important;
+    }
+
+    /* 顶部与卡片内常用按钮暗黑模式保底 (杜绝刺眼白底) */
+    html.dark button.bg-slate-100,
+    html.dark .themed-card button.bg-slate-100,
+    html.dark .themed-header button.bg-slate-100 {
+      background-color: #1e293b !important;
+      border-color: #334155 !important;
+      color: #f1f5f9 !important;
+    }
+    html.dark button.bg-slate-100:hover,
+    html.dark .themed-card button.bg-slate-100:hover,
+    html.dark .themed-header button.bg-slate-100:hover {
+      background-color: #334155 !important;
+      color: #ffffff !important;
+    }
+    html.dark button.bg-indigo-50,
+    html.dark .themed-card button.bg-indigo-50,
+    html.dark .themed-header button.bg-indigo-50 {
+      background-color: rgba(99, 102, 241, 0.18) !important;
+      border-color: rgba(99, 102, 241, 0.35) !important;
+      color: #a5b4fc !important;
+    }
+    html.dark button.bg-indigo-50:hover,
+    html.dark .themed-card button.bg-indigo-50:hover,
+    html.dark .themed-header button.bg-indigo-50:hover {
+      background-color: rgba(99, 102, 241, 0.28) !important;
+      color: #c7d2fe !important;
+    }
+    html.dark button.bg-sky-50,
+    html.dark .themed-card button.bg-sky-50,
+    html.dark .themed-header button.bg-sky-50 {
+      background-color: rgba(14, 165, 233, 0.18) !important;
+      border-color: rgba(14, 165, 233, 0.35) !important;
+      color: #7dd3fc !important;
+    }
+    html.dark button.bg-sky-50:hover,
+    html.dark .themed-card button.bg-sky-50:hover,
+    html.dark .themed-header button.bg-sky-50:hover {
+      background-color: rgba(14, 165, 233, 0.28) !important;
+      color: #bae6fd !important;
+    }
+
+    /* 抽屉与浮层暗黑适配保底 */
+    html.dark aside.bg-white {
+      background-color: #0f172a !important;
+      border-color: #1e293b !important;
+    }
+    html.dark aside .bg-slate-50,
+    html.dark aside .bg-slate-50\/50 {
+      background-color: #0b0f19 !important;
+      border-color: #1e293b !important;
+    }
+    html.dark aside .bg-white {
+      background-color: #111827 !important;
+      border-color: #1e293b !important;
+    }
+
     [v-cloak] {
       display: none !important;
     }
@@ -212,6 +299,12 @@
           <button @click="toggleAllEvade" class="px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/40 rounded-lg text-xs font-medium transition flex items-center gap-1.5 active:scale-95">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
             全员避让
+          </button>
+
+          <!-- 一键全员恢复 -->
+          <button @click="resumeAllEvade" class="px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 rounded-lg text-xs font-medium transition flex items-center gap-1.5 active:scale-95">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            全员恢复
           </button>
 
           <!-- 添加账号 -->
@@ -294,12 +387,12 @@
           <div>
             <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">防互踢避让状态</p>
             <div class="flex items-baseline space-x-2 mt-1">
-              <span class="text-2xl font-bold font-mono text-purple-500">{{ evadeCount }} 账号</span>
+              <span class="text-2xl font-bold font-mono text-purple-600 dark:text-purple-400">{{ evadeCount }} 账号</span>
               <span class="text-xs text-slate-400">已避让</span>
             </div>
             <p class="text-[11px] text-slate-400 mt-2">自动解除重连，静默探测自愈</p>
           </div>
-          <div class="p-3 bg-purple-500/10 text-purple-500 rounded-xl">
+          <div class="p-3 bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-xl">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           </div>
         </div>
@@ -357,6 +450,10 @@
                     <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
                     托管在线中
                   </span>
+                  <span v-else-if="acc.connection_status === 'connecting'" class="px-2.5 py-1 text-xs font-medium rounded-full bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/40 flex items-center gap-1.5 animate-pulse">
+                    <span class="h-2 w-2 rounded-full bg-sky-500 animate-ping"></span>
+                    正在连入网关...
+                  </span>
                   <span v-else class="px-2.5 py-1 text-xs font-medium rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700 flex items-center gap-1.5">
                     <span class="h-2 w-2 rounded-full bg-slate-400"></span>
                     离线 / 未连接
@@ -368,7 +465,10 @@
               <div v-if="acc.evade_state === 'evading'" class="mt-3.5 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 text-xs text-amber-700 dark:text-amber-300 flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2">
                   <svg class="w-4 h-4 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                  <span>检测到玩家自登或顶号，已安全避让让位！</span>
+                  <div>
+                    <span class="font-medium">已触发防互踢避让 ({{ acc.evade_reason || '微端登录让位' }})</span>
+                    <p class="text-[10px] text-amber-600/80 dark:text-amber-400/80 mt-0.5" v-if="acc.evade_probe_at">预计 {{ formatProbeTime(acc.evade_probe_at) }} 后静默探活自愈</p>
+                  </div>
                 </div>
                 <button @click="resumeHosting(acc)" class="px-2 py-0.5 bg-amber-500 text-slate-900 font-bold rounded text-[11px] shadow hover:bg-amber-400 transition shrink-0">
                   打完了·恢复托管
@@ -422,6 +522,12 @@
                 <button v-if="acc.evade_state === 'evading'" @click="resumeHosting(acc)" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded font-semibold transition active:scale-95 flex items-center gap-1 shadow-sm">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                   打完了·恢复托管
+                </button>
+
+                <!-- 主动单号避让 -->
+                <button v-if="acc.evade_state !== 'evading' && acc.connection_status === 'connected'" @click="evadeHosting(acc)" class="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded text-[11px] font-medium transition active:scale-95 flex items-center gap-1" title="主动断开该账号以让位微端登录">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                  主动避让
                 </button>
 
                 <!-- 单跑日常按钮 -->
@@ -481,14 +587,32 @@
             <button @click="clearLogs" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
               清屏
             </button>
+            <button @click="toggleConsoleExpand" :title="isConsoleExpanded ? '还原视窗高度' : '放大视窗高度'" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition flex items-center gap-1">
+              <svg v-if="!isConsoleExpanded" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              <svg v-else class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9L4 4m0 0v4m0-4h4m6 5l5-5m0 0h-4m4 0v4M9 15l-5 5m0 0v-4m0 4h4m6-5l5 5m0 0h-4m4 0v-4"/></svg>
+              <span>{{ isConsoleExpanded ? '还原' : '放大' }}</span>
+            </button>
           </div>
         </div>
 
-        <!-- 日志输出视窗 -->
-        <div ref="consoleRef" class="p-4 h-56 overflow-y-auto font-mono text-xs text-slate-300 space-y-1.5 custom-scroll bg-slate-950/95 leading-relaxed">
-          <p v-for="(log, idx) in filteredLogs" :key="idx" :class="log.color">
-            {{ log.text }}
-          </p>
+        <!-- 日志输出视窗 (含悬浮直达最新胶囊) -->
+        <div class="relative">
+          <div ref="consoleRef" @scroll="handleConsoleScroll" :class="isConsoleExpanded ? 'h-[32rem]' : 'h-56'" class="p-4 overflow-y-auto font-mono text-xs text-slate-300 space-y-1.5 custom-scroll bg-slate-950/95 leading-relaxed transition-all duration-300">
+            <p v-for="(log, idx) in filteredLogs" :key="idx" :class="log.color">
+              {{ log.text }}
+            </p>
+          </div>
+
+          <!-- 向上翻阅时浮现的直达最新胶囊提示 -->
+          <transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0 translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition duration-150 ease-in" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 translate-y-2">
+            <div v-show="!isUserAtBottom" class="absolute bottom-3 right-4 z-10">
+              <button @click="scrollToBottomManual" class="px-3 py-1 bg-sky-600 hover:bg-sky-500 text-white rounded-full text-xs font-medium shadow-lg backdrop-blur border border-sky-400/40 flex items-center gap-1.5 transition active:scale-95 animate-bounce">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/></svg>
+                <span>直达最新</span>
+                <span v-if="unreadCount > 0" class="px-1.5 py-0.2 text-[10px] bg-red-500 rounded-full font-bold">+{{ unreadCount }}</span>
+              </button>
+            </div>
+          </transition>
         </div>
       </div>
     </main>
@@ -585,10 +709,20 @@
           <div class="space-y-2">
             <div class="flex items-center justify-between">
               <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                <span>只读 100 格道具快照 (Mod 2)</span>
-                <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">安全只读 · 杜绝误卖</span>
+                <span>100 格道具快照 (Mod 2)</span>
+                <span class="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">安全自理 · 绝不误卖核心资产</span>
               </h4>
-              <span class="text-[11px] text-slate-400">已用: {{ (drawer.telemetry?.inventory || []).length }} / 100 格</span>
+              <div class="flex items-center space-x-2">
+                <span class="text-[11px] text-slate-400">已用: {{ (drawer.telemetry?.inventory || []).length }} / 100 格</span>
+                <button @click="useAllInventory(drawer.alias)" :disabled="drawer.usingItems" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-xs shadow transition active:scale-95 flex items-center gap-1 disabled:opacity-50">
+                  <svg class="w-3.5 h-3.5" :class="drawer.usingItems ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                  一键使用物品
+                </button>
+                <button @click="openCleanModal(drawer.alias)" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded font-bold text-xs shadow transition active:scale-95 flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  一键清空背包
+                </button>
+              </div>
             </div>
 
             <!-- 10x10 格子矩阵 -->
@@ -844,6 +978,46 @@
       </div>
     </div>
 
+    <!-- 一键清空背包二次确认 Modal -->
+    <div v-if="cleanModal.show" class="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div class="themed-card w-full max-w-md p-6 space-y-4 shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div class="flex items-center space-x-2">
+            <h3 class="font-bold text-slate-800 dark:text-slate-100 text-base flex items-center gap-2">
+              <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+              一键清空背包二次确认
+            </h3>
+          </div>
+          <button @click="cleanModal.show = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+          <p class="font-medium text-slate-800 dark:text-slate-100 text-sm">
+            确定要对账号 <strong class="text-sky-600 dark:text-sky-400 font-bold">[{{ cleanModal.alias }}]</strong> 执行背包四阶深度自理清理吗？
+          </p>
+          <div class="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 space-y-1.5 text-[11px] leading-relaxed">
+            <p class="font-bold text-amber-700 dark:text-amber-300">系统将严格遵循四阶安全梯度流水线执行：</p>
+            <p>1. <strong>智能整理归纳</strong>：调用协议合并同类碎片与重叠堆叠</p>
+            <p>2. <strong>开箱与使用</strong>：开启固定掉落宝箱，主角使用经验丹，低体力按需吃药（自选礼盒严格跳过）</p>
+            <p>3. <strong>存入随身仓库</strong>：将多余强化材料与材料类道具转移至随身仓库</p>
+            <p>4. <strong>安全变卖杂物</strong>：变卖普通白/绿杂物与低阶淘汰装备（紫/金/暗金装备与核心道具绝对禁售保护）</p>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs">
+          <button @click="cleanModal.show = false" :disabled="cleanModal.loading" class="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition">
+            取消
+          </button>
+          <button @click="confirmCleanInventory" :disabled="cleanModal.loading" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-lg font-bold shadow transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50">
+            <svg class="w-3.5 h-3.5" :class="cleanModal.loading ? 'animate-spin' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>{{ cleanModal.loading ? '正在执行四阶自理...' : '确认执行清空' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Vue 3 + Element Plus 核心前端逻辑 -->
@@ -918,6 +1092,9 @@
         const currentLogAlias = ref('all');
         const logs = ref([]);
         const consoleRef = ref(null);
+        const isUserAtBottom = ref(true);
+        const unreadCount = ref(0);
+        const isConsoleExpanded = ref(false);
         let eventSource = null;
 
         // 添加账号弹窗状态
@@ -943,12 +1120,20 @@
           token: localStorage.getItem('sxd_web_token') || '',
         });
 
+        // 一键清空背包二次确认弹窗状态
+        const cleanModal = reactive({
+          show: false,
+          loading: false,
+          alias: '',
+        });
+
         // 详情设置抽屉状态
         const drawer = reactive({
           show: false,
           alias: '',
           tab: 'assets',
           loading: false,
+          usingItems: false,
           telemetry: null,
           assistant: null,
           routineConfig: {
@@ -1092,7 +1277,7 @@
           return Math.max(15, Math.round((coins / max) * 100));
         }
 
-        // 日志打印辅助
+        // 日志打印辅助 (智能底部吸附)
         function appendLog(text, level = 'INFO', alias = null) {
           const time = new Date().toTimeString().split(' ')[0];
           let color = 'text-slate-300';
@@ -1104,17 +1289,65 @@
           else if (text.includes('[TaskScheduler]')) color = 'text-sky-300';
 
           logs.value.push({ text: `[${time}] ${text}`, level, alias, color });
-          if (logs.value.length > 500) logs.value.shift();
 
-          nextTick(() => {
-            if (consoleRef.value) {
-              consoleRef.value.scrollTop = consoleRef.value.scrollHeight;
+          // 处于吸附状态时：更新并平滑滚动到底部；翻阅时不激进 shift 避免视窗抖动
+          if (isUserAtBottom.value) {
+            if (logs.value.length > 1000) {
+              logs.value.splice(0, logs.value.length - 1000);
             }
-          });
+            nextTick(() => {
+              if (consoleRef.value) {
+                consoleRef.value.scrollTop = consoleRef.value.scrollHeight;
+              }
+            });
+          } else {
+            unreadCount.value++;
+            // 翻阅时软上限 2000 条防御
+            if (logs.value.length > 2000) {
+              logs.value.splice(0, logs.value.length - 1500);
+            }
+          }
+        }
+
+        // 视窗滚动监听
+        function handleConsoleScroll() {
+          if (!consoleRef.value) return;
+          const { scrollTop, scrollHeight, clientHeight } = consoleRef.value;
+          const distanceToBottom = scrollHeight - scrollTop - clientHeight;
+          if (distanceToBottom <= 50) {
+            isUserAtBottom.value = true;
+            unreadCount.value = 0;
+          } else {
+            isUserAtBottom.value = false;
+          }
+        }
+
+        // 手动一键直达底部
+        function scrollToBottomManual() {
+          if (consoleRef.value) {
+            consoleRef.value.scrollTo({
+              top: consoleRef.value.scrollHeight,
+              behavior: 'smooth',
+            });
+            isUserAtBottom.value = true;
+            unreadCount.value = 0;
+          }
+        }
+
+        // 切换日志视窗展开/还原
+        function toggleConsoleExpand() {
+          isConsoleExpanded.value = !isConsoleExpanded.value;
+          if (isUserAtBottom.value) {
+            nextTick(() => {
+              scrollToBottomManual();
+            });
+          }
         }
 
         function clearLogs() {
           logs.value = [];
+          unreadCount.value = 0;
+          isUserAtBottom.value = true;
         }
 
         function simulateLogEntry() {
@@ -1380,6 +1613,9 @@
         // 防互踢手动恢复
         async function resumeHosting(acc) {
           appendLog(`[${acc.alias}] [Manual Resume] 玩家已手动点击恢复托管，重新发起 TCP 登录握手...`);
+          acc.evade_state = 'none';
+          acc.hosting_enabled = true;
+          acc.connection_status = 'connecting';
           try {
             const resp = await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}/hosting/resume`, {
               method: 'POST',
@@ -1387,9 +1623,8 @@
             });
             const res = await resp.json();
             if (res.success) {
-              acc.evade_state = 'none';
-              appendLog(`[${acc.alias}] [Online Hosting] 重新登录成功！已退出避让状态，恢复常驻在线。`, 'SUCCESS', acc.alias);
-              showNotify('避让恢复', `${acc.alias} 已重新连入游戏并恢复在线托管！`);
+              appendLog(`[${acc.alias}] [Online Hosting] 正在恢复长连接常驻在线...`, 'SUCCESS', acc.alias);
+              showNotify('避让恢复', `${acc.alias} 已重新发起长连接在线托管！`);
               await loadAccounts();
             }
           } catch (e) {
@@ -1427,9 +1662,151 @@
           });
         }
 
-        function toggleAllEvade() {
-          appendLog(`[System] [Mutual Evade] 已向所有在线账号发送避让信号，连接已主动断开，防止误踢正在游戏的玩家。`, 'WARN');
-          showNotify('全员避让', '所有账号已主动断开连接避让玩家', 'warning');
+        async function toggleAllEvade() {
+          try {
+            appendLog(`[System] [Mutual Evade] 正在向所有在线账号发送避让信号并关闭长连接托管...`, 'WARN');
+            accounts.value.forEach(a => {
+              if (a.enabled) {
+                a.evade_state = 'evading';
+                a.hosting_enabled = false;
+                a.connection_status = 'disconnected';
+              }
+            });
+            const res = await fetch('/api/accounts/evade/all', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+            });
+            const data = await res.json();
+            if (data.success) {
+              appendLog(`[System] [Mutual Evade] ${data.message}`, 'WARN');
+              showNotify('全员避让', data.message || '所有账号已主动断开长连接让位玩家', 'warning');
+              await loadAccounts();
+            } else {
+              showNotify('避让失败', data.detail || '操作失败', 'error');
+            }
+          } catch (err) {
+            appendLog(`[System] [Error] 全员避让请求异常: ${err}`, 'ERROR');
+            showNotify('避让异常', String(err), 'error');
+          }
+        }
+
+        async function resumeAllEvade() {
+          try {
+            appendLog(`[System] [Mutual Evade] 正在唤醒所有避让账号恢复在线托管...`, 'INFO');
+            accounts.value.forEach(a => {
+              if (a.enabled) {
+                a.evade_state = 'none';
+                a.hosting_enabled = true;
+                a.connection_status = 'connecting';
+              }
+            });
+            const res = await fetch('/api/accounts/resume/all', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+            });
+            const data = await res.json();
+            if (data.success) {
+              appendLog(`[System] [Mutual Evade] ${data.message}`, 'SUCCESS');
+              showNotify('全员恢复', data.message || '所有账号已恢复在线托管并开始握手！', 'success');
+              await loadAccounts();
+            } else {
+              showNotify('恢复失败', data.detail || '操作失败', 'error');
+            }
+          } catch (err) {
+            appendLog(`[System] [Error] 全员恢复请求异常: ${err}`, 'ERROR');
+            showNotify('恢复异常', String(err), 'error');
+          }
+        }
+
+        async function evadeHosting(acc) {
+          try {
+            appendLog(`[${acc.alias}] [Mutual Evade] 正在主动断开该账号长连接让位微端登录...`, 'WARN', acc.alias);
+            acc.evade_state = 'evading';
+            acc.hosting_enabled = false;
+            acc.connection_status = 'disconnected';
+            const res = await fetch(`/api/accounts/${encodeURIComponent(acc.alias)}/hosting/evade`, {
+              method: 'POST',
+              headers: getAuthHeaders(),
+            });
+            const data = await res.json();
+            if (data.success) {
+              showNotify('已避让', `${acc.alias} 已进入避让保护状态，长连接已关闭让位`, 'warning');
+              await loadAccounts();
+            }
+          } catch (err) {
+            showNotify('避让失败', String(err), 'error');
+          }
+        }
+
+        function formatProbeTime(timestamp) {
+          if (!timestamp) return '';
+          const diffSec = Math.max(0, Math.floor(timestamp - (Date.now() / 1000)));
+          const mins = Math.floor(diffSec / 60);
+          const secs = diffSec % 60;
+          if (mins <= 0) return `${secs}秒`;
+          return `${mins}分${secs}秒`;
+        }
+
+        function openCleanModal(alias) {
+          cleanModal.alias = alias;
+          cleanModal.loading = false;
+          cleanModal.show = true;
+        }
+
+        async function confirmCleanInventory() {
+          if (!cleanModal.alias) return;
+          cleanModal.loading = true;
+          try {
+            appendLog(`[${cleanModal.alias}] [Item Clean] 正在执行四阶背包自理流水线 (整理/使用/存仓/变卖)...`, 'INFO', cleanModal.alias);
+            const res = await fetch(`/api/accounts/${encodeURIComponent(cleanModal.alias)}/inventory/clean`, {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target_empty: 5, force_all: true }),
+            });
+            const data = await res.json();
+            cleanModal.show = false;
+            if (data.success) {
+              showNotify('背包清理完成', data.message || '背包自理执行成功！', 'success');
+              appendLog(`[${cleanModal.alias}] [Item Clean] ${data.message}`, 'SUCCESS', cleanModal.alias);
+              await loadDrawerTelemetry(cleanModal.alias);
+              await loadAccounts();
+            } else {
+              showNotify('背包清理异常', data.message || data.detail || '清理失败', 'error');
+              appendLog(`[${cleanModal.alias}] [Item Clean] 失败: ${data.message || data.detail}`, 'ERROR', cleanModal.alias);
+            }
+          } catch (err) {
+            showNotify('清理网络异常', String(err), 'error');
+            appendLog(`[${cleanModal.alias}] [Error] 清理异常: ${err}`, 'ERROR', cleanModal.alias);
+          } finally {
+            cleanModal.loading = false;
+          }
+        }
+
+        async function useAllInventory(alias) {
+          if (!alias) return;
+          drawer.usingItems = true;
+          try {
+            appendLog(`[${alias}] [Item Use] 正在批量打开或使用背包内的所有宝箱、丹药与可用消耗品...`, 'INFO', alias);
+            const res = await fetch(`/api/accounts/${encodeURIComponent(alias)}/inventory/use-all`, {
+              method: 'POST',
+              headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+            });
+            const data = await res.json();
+            if (data.success) {
+              showNotify('物品使用完成', data.message || '一键使用背包物品执行成功！', 'success');
+              appendLog(`[${alias}] [Item Use] ${data.message}`, 'SUCCESS', alias);
+              await loadDrawerTelemetry(alias);
+              await loadAccounts();
+            } else {
+              showNotify('使用物品失败', data.message || data.detail || '操作失败', 'error');
+              appendLog(`[${alias}] [Item Use] 失败: ${data.message || data.detail}`, 'ERROR', alias);
+            }
+          } catch (err) {
+            showNotify('使用物品异常', String(err), 'error');
+            appendLog(`[${alias}] [Error] 使用物品异常: ${err}`, 'ERROR', alias);
+          } finally {
+            drawer.usingItems = false;
+          }
         }
 
         // 抽屉详情加载
@@ -1576,6 +1953,43 @@
               const target = accounts.value.find(a => a.alias === d.alias);
               if (target) {
                 target.evade_state = 'evading';
+                target.hosting_enabled = false;
+                target.connection_status = 'disconnected';
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('ACCOUNT_CONNECTING', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.connection_status = 'connecting';
+                target.hosting_enabled = true;
+                target.evade_state = 'none';
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('ACCOUNT_CONNECTED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.connection_status = 'connected';
+                target.hosting_enabled = true;
+                target.evade_state = 'none';
+                if (d.nickname) target.nickname = d.nickname;
+                if (d.level && target.telemetry) target.telemetry.level = d.level;
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('ACCOUNT_DISCONNECTED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target && target.evade_state !== 'evading') {
                 target.connection_status = 'disconnected';
               }
             } catch (err) {}
@@ -1586,7 +2000,6 @@
               const d = JSON.parse(e.data);
               const target = accounts.value.find(a => a.alias === d.alias);
               if (target) {
-                target.connection_status = 'connected';
                 target.hosting_enabled = true;
                 target.evade_state = 'none';
               }
@@ -1600,6 +2013,30 @@
               if (target) {
                 target.connection_status = 'disconnected';
                 target.hosting_enabled = false;
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('ACCOUNT_EVADED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.evade_state = 'evading';
+                target.connection_status = 'disconnected';
+                target.hosting_enabled = false;
+              }
+            } catch (err) {}
+          });
+
+          eventSource.addEventListener('ACCOUNT_RESUMED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                target.evade_state = 'none';
+                target.hosting_enabled = true;
+                target.connection_status = 'connecting';
               }
             } catch (err) {}
           });
@@ -1621,6 +2058,7 @@
           consoleRef,
           accModal,
           tokenModal,
+          cleanModal,
           drawer,
           routineGroups: ROUTINE_GROUPS,
           hostedCount,
@@ -1632,9 +2070,16 @@
           drawerInventory100,
           formatCoins,
           formatTime,
+          formatProbeTime,
           getAssetBarHeight,
           clearLogs,
           simulateLogEntry,
+          isUserAtBottom,
+          unreadCount,
+          isConsoleExpanded,
+          handleConsoleScroll,
+          scrollToBottomManual,
+          toggleConsoleExpand,
           toggleTheme,
           onPlatformChange,
           openAccountModal,
@@ -1645,9 +2090,14 @@
           deleteAccount,
           toggleHosting,
           resumeHosting,
+          evadeHosting,
           triggerRoutine,
           triggerAllRoutines,
           toggleAllEvade,
+          resumeAllEvade,
+          useAllInventory,
+          openCleanModal,
+          confirmCleanInventory,
           syncAccountTelemetry,
           syncAllTelemetry,
           syncDrawerTelemetry,

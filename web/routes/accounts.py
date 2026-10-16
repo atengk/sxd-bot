@@ -88,6 +88,17 @@ class HostingToggleReq(BaseModel):
     hosting_enabled: Optional[bool] = None
 
 
+class InventoryCleanReq(BaseModel):
+    """背包四阶自理请求体
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    target_empty: int = Field(default=5, ge=1, le=100, description="目标预留空格数量")
+    force_all: bool = Field(default=True, description="是否强制跑完全部四阶清理")
+
+
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_accounts(request: Request) -> List[Dict[str, Any]]:
     """获取所有账号列表及其动态长连接和防互踢避让状态"""
@@ -112,6 +123,8 @@ async def list_accounts(request: Request) -> List[Dict[str, Any]]:
                 "hosting_enabled": session_info.get("hosting_enabled", acc.hosting_enabled),
                 "evade_state": session_info.get("evade_state", acc.evade_state),
                 "evade_since": session_info.get("evade_since", acc.evade_since),
+                "evade_reason": session_info.get("evade_reason", ""),
+                "evade_probe_at": session_info.get("evade_probe_at", 0.0),
                 "connection_status": session_info.get("connection_status", "disconnected"),
                 "last_heartbeat": session_info.get("last_heartbeat", 0.0),
                 "created_at": acc.created_at,
@@ -267,6 +280,34 @@ async def update_account(
 
 
 
+@router.post("/evade/all", response_model=Dict[str, Any])
+async def evade_all_accounts(request: Request) -> Dict[str, Any]:
+    """一键向全部在线账号下发防互踢避让信号并主动断开长连接"""
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="会话管理器未就绪",
+        )
+
+    evaded_count = session_manager.evade_all(reason="用户手动全员避让")
+    return {"success": True, "evaded_count": evaded_count, "message": f"已向 {evaded_count} 个账号下发避让信号并断开连接"}
+
+
+@router.post("/resume/all", response_model=Dict[str, Any])
+async def resume_all_accounts(request: Request) -> Dict[str, Any]:
+    """一键让全部账号退出避让状态并重新连入在线托管"""
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="会话管理器未就绪",
+        )
+
+    resumed_count = session_manager.resume_all()
+    return {"success": True, "resumed_count": resumed_count, "message": f"已成功为 {resumed_count} 个账号恢复在线托管"}
+
+
 @router.delete("/{alias}", response_model=Dict[str, Any])
 async def delete_account(alias: str, request: Request) -> Dict[str, Any]:
     """根据别名删除账号及其关联日常配置"""
@@ -331,3 +372,81 @@ async def resume_hosting(alias: str, request: Request) -> Dict[str, Any]:
         )
 
     return {"success": True, "alias": alias, "evade_state": "none"}
+
+
+@router.post("/{alias}/hosting/evade", response_model=Dict[str, Any])
+async def evade_single_account(alias: str, request: Request) -> Dict[str, Any]:
+    """玩家手动触发指定账号进入防互踢避让并主动断开长连接"""
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="会话管理器未就绪",
+        )
+
+    db: ConfigDatabase = request.app.state.db
+    acc = db.get_account(alias)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"账号 '{alias}' 不存在",
+        )
+
+    session_manager.trigger_evade(alias, reason="用户手动避让", probe_delay_sec=3600.0)
+    return {"success": True, "alias": alias, "evade_state": "evading"}
+
+
+@router.post("/{alias}/inventory/clean", response_model=Dict[str, Any])
+async def clean_account_inventory(
+    alias: str,
+    request: Request,
+    req: Optional[InventoryCleanReq] = None,
+) -> Dict[str, Any]:
+    """手动执行账号背包四阶自理流水线 (整理/使用/存仓/变卖)"""
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="会话管理器未就绪",
+        )
+
+    db: ConfigDatabase = request.app.state.db
+    acc = db.get_account(alias)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"账号 '{alias}' 不存在",
+        )
+
+    target_empty = req.target_empty if req else 5
+    force_all = req.force_all if req else True
+
+    result = await session_manager.clean_inventory(
+        alias=alias,
+        target_empty=target_empty,
+        force_all=force_all,
+    )
+    return result
+
+
+@router.post("/{alias}/inventory/use-all", response_model=Dict[str, Any])
+async def use_all_account_inventory(alias: str, request: Request) -> Dict[str, Any]:
+    """批量打开或使用指定账号背包内的所有宝箱、丹药与可用消耗品 (不存仓、不丢弃)"""
+    session_manager = getattr(request.app.state, "session_manager", None)
+    if not session_manager:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="会话管理器未就绪",
+        )
+
+    db: ConfigDatabase = request.app.state.db
+    acc = db.get_account(alias)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"账号 '{alias}' 不存在",
+        )
+
+    result = await session_manager.use_all_inventory(alias=alias)
+    return result
+

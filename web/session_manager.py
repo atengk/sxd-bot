@@ -224,22 +224,131 @@ class AccountSessionManager:
             }
 
         session = self._sessions.get(alias, {})
-        conn_status = session.get("connection_status")
-        if not conn_status:
-            if acc.evade_state == "evading":
-                conn_status = "disconnected"
-            elif acc.hosting_enabled and acc.enabled:
-                conn_status = "connected"
-            else:
-                conn_status = "disconnected"
+        client = session.get("client")
+        is_conn = client is not None and getattr(client.context, "is_connected", False)
+
+        if acc.evade_state == "evading":
+            conn_status = "disconnected"
+        elif is_conn:
+            conn_status = "connected"
+        elif alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
+            conn_status = session.get("connection_status", "connecting")
+        else:
+            conn_status = "disconnected"
+
+        evade_reason = session.get("evade_reason")
+        if not evade_reason and acc.evade_state == "evading":
+            evade_reason = "微端登录让位"
+        evade_probe_at = session.get("evade_probe_at", 0.0)
+        if not evade_probe_at and acc.evade_state == "evading":
+            evade_probe_at = acc.evade_since + 3600.0
 
         return {
             "connection_status": conn_status,
             "evade_state": acc.evade_state,
             "evade_since": acc.evade_since,
+            "evade_reason": evade_reason or "",
+            "evade_probe_at": evade_probe_at,
             "hosting_enabled": acc.hosting_enabled,
             "last_heartbeat": session.get("last_heartbeat", 0.0),
         }
+
+    def get_client(self, alias: str) -> Optional[SXDClient]:
+        """获取账号当前活跃的长连接客户端实例"""
+        return self._sessions.get(alias, {}).get("client")
+
+    def get_context(self, alias: str) -> Optional[GameContext]:
+        """获取账号当前活跃的运行时上下文实例"""
+        return self._sessions.get(alias, {}).get("context")
+
+    async def clean_inventory(
+        self,
+        alias: str,
+        target_empty: int = 5,
+        force_all: bool = True,
+    ) -> Dict[str, Any]:
+        """异步执行指定账号的四阶背包自理流水线
+
+        Args:
+            alias: 账号别名。
+            target_empty: 目标预留空格数量。
+            force_all: 是否强制四阶深度全清。
+
+        Returns:
+            执行结果字典。
+        """
+        lock = self._get_account_lock(alias)
+        async with lock:
+            session = self._sessions.get(alias, {})
+            client = session.get("client")
+            ctx = session.get("context")
+            if not client or not ctx or not ctx.is_connected:
+                return {"success": False, "message": f"账号 '{alias}' 当前未处于有效在线托管连接状态，无法操作背包"}
+
+            from tasks.routine.item_clean import ItemCleanTask
+            task = ItemCleanTask(target_empty=target_empty, force_all=force_all)
+            res = await task.execute(client, ctx)
+
+            # 触发最新态势感知
+            pdb = self.get_player_db(alias)
+            if pdb:
+                try:
+                    query_srv = QueryService(client=client, context=ctx, player_db=pdb)
+                    await query_srv.query_all(timeout_sec=3.0)
+                    self.event_bus.publish(
+                        "telemetry_updated",
+                        {"type": "telemetry_updated", "alias": alias, "timestamp": time.time()},
+                    )
+                except Exception as q_exc:
+                    logger.debug("清包后态势刷新异常: %s", q_exc)
+
+            return {
+                "success": res.is_success,
+                "alias": alias,
+                "message": res.message,
+                "data": res.data or {},
+            }
+
+    async def use_all_inventory(self, alias: str) -> Dict[str, Any]:
+        """批量打开或使用指定账号背包内的所有宝箱、丹药与可用消耗品 (不存仓、不丢弃)
+
+        Args:
+            alias: 账号别名。
+
+        Returns:
+            执行结果字典。
+        """
+        lock = self._get_account_lock(alias)
+        async with lock:
+            session = self._sessions.get(alias, {})
+            client = session.get("client")
+            ctx = session.get("context")
+            if not client or not ctx or not ctx.is_connected:
+                return {"success": False, "message": f"账号 '{alias}' 当前未处于有效在线托管连接状态，无法操作背包"}
+
+            from tasks.routine.item_clean import ItemCleanTask
+            task = ItemCleanTask(target_empty=100, force_all=True, use_only=True)
+            res = await task.execute(client, ctx)
+
+            # 触发最新态势感知
+            pdb = self.get_player_db(alias)
+            if pdb:
+                try:
+                    query_srv = QueryService(client=client, context=ctx, player_db=pdb)
+                    await query_srv.query_all(timeout_sec=3.0)
+                    self.event_bus.publish(
+                        "telemetry_updated",
+                        {"type": "telemetry_updated", "alias": alias, "timestamp": time.time()},
+                    )
+                except Exception as q_exc:
+                    logger.debug("使用道具后态势刷新异常: %s", q_exc)
+
+            return {
+                "success": res.is_success,
+                "alias": alias,
+                "message": res.message,
+                "data": res.data or {},
+            }
 
     def start_hosting(self, alias: str) -> bool:
         """为指定账号开启真实长连接托管与心跳保活
@@ -257,7 +366,8 @@ class AccountSessionManager:
         self.db.set_hosting_state(alias, True)
         if alias not in self._sessions:
             self._sessions[alias] = {}
-        self._sessions[alias]["connection_status"] = "connected"
+        self._sessions[alias]["connection_status"] = "connecting"
+        self._sessions[alias]["hosting_enabled"] = True
         self._sessions[alias]["last_heartbeat"] = time.time()
 
         # 取消已有的工作协程
@@ -276,7 +386,11 @@ class AccountSessionManager:
             "HOSTING_STARTED",
             {"alias": alias, "timestamp": time.time()},
         )
-        logger.info("[%s] 长连接托管已启动 (真机 Socket 维持)", alias)
+        self.event_bus.publish(
+            "ACCOUNT_CONNECTING",
+            {"type": "ACCOUNT_CONNECTING", "alias": alias, "timestamp": time.time()},
+        )
+        logger.info("[%s] 长连接托管已启动 (正在连入游戏网关...)", alias)
         return True
 
     def start_all_hosting(self) -> int:
@@ -306,12 +420,12 @@ class AccountSessionManager:
         self.db.set_hosting_state(alias, False)
         if alias in self._sessions:
             self._sessions[alias]["connection_status"] = "disconnected"
+            self._sessions[alias]["hosting_enabled"] = False
             active_client = self._sessions[alias].pop("client", None)
             if active_client:
                 try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(active_client.disconnect())
-                except RuntimeError:
+                    active_client.abort()
+                except Exception:
                     pass
 
         if alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
@@ -320,6 +434,10 @@ class AccountSessionManager:
         self.event_bus.publish(
             "HOSTING_STOPPED",
             {"alias": alias, "timestamp": time.time()},
+        )
+        self.event_bus.publish(
+            "ACCOUNT_DISCONNECTED",
+            {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
         )
         logger.info("[%s] 长连接托管已停止", alias)
         return True
@@ -411,6 +529,7 @@ class AccountSessionManager:
 
                 ctx = GameContext()
                 client = SXDClient(context=ctx, event_bus=self.event_bus)
+                self._sessions.setdefault(alias, {})["client"] = client
 
                 # 挂载顶号协议监听 (Mod 100 Act 22 或 Mod 0 Act 15)
                 async def _on_packet(mod: int, act: int, payload: bytes) -> None:
@@ -424,6 +543,10 @@ class AccountSessionManager:
                     backoff_idx += 1
                     logger.warning("[%s] 连接网关 %s:%d 失败，退避 %.1f 秒后重试...", alias, creds.server_host, creds.server_port, delay)
                     self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    self.event_bus.publish(
+                        "ACCOUNT_DISCONNECTED",
+                        {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
+                    )
                     await asyncio.sleep(delay)
                     continue
 
@@ -435,6 +558,10 @@ class AccountSessionManager:
                     backoff_idx += 1
                     logger.warning("[%s] 托管登录认证失败: %s，退避 %.1f 秒后重试...", alias, login_res.message, delay)
                     self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    self.event_bus.publish(
+                        "ACCOUNT_DISCONNECTED",
+                        {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
+                    )
                     await client.disconnect()
                     await asyncio.sleep(delay)
                     continue
@@ -448,6 +575,20 @@ class AccountSessionManager:
                 self._sessions[alias]["client"] = client
                 self._sessions[alias]["context"] = ctx
                 self._sessions[alias]["last_heartbeat"] = time.time()
+                self._sessions[alias]["hosting_enabled"] = True
+
+                # 广播 SSE 实时连接就绪通知
+                self.event_bus.publish(
+                    "ACCOUNT_CONNECTED",
+                    {
+                        "type": "ACCOUNT_CONNECTED",
+                        "alias": alias,
+                        "player_id": ctx.player.player_id,
+                        "nickname": ctx.player.nickname,
+                        "level": ctx.player.level,
+                        "timestamp": time.time(),
+                    },
+                )
 
                 # 持久化真实角色 player_id 并精准初始化私有数据库
                 if ctx.player.player_id > 0:
@@ -496,8 +637,8 @@ class AccountSessionManager:
                         except Exception as tr_err:
                             logger.warning("[%s] 跨天流水线启动异常: %s", alias, tr_err)
 
-                    # 3. 中频巡检轨：默认每 30 分钟 (1800 秒) 自动巡检药园/助友/防体力溢出
-                    elif now - last_patrol_time >= 1800.0:
+                    # 3. 中频巡检轨：默认每 3 分钟 (180 秒) 自动巡检药园/助友/防体力溢出/全景态势同步
+                    elif now - last_patrol_time >= 180.0:
                         last_patrol_time = now
                         logger.info("[%s] 触发常驻周期巡检 (药园收获补种 / 帮派助友 / 防体力溢出 / 全景态势同步)...", alias)
                         try:
@@ -512,17 +653,29 @@ class AccountSessionManager:
                 self._sessions[alias]["connection_status"] = "disconnected"
                 self._sessions[alias].pop("client", None)
                 await client.disconnect()
+                self.event_bus.publish(
+                    "ACCOUNT_DISCONNECTED",
+                    {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
+                )
 
-                # 4. 指数退避自愈：非避让模式下的异常断开，延迟后自动重新登录连接
+                # 4. 零容忍服从避让：非避让模式下的异常断开 (收到服务端 EOF/Reset)，坚决不自动重连抢线，立即触发防互踢避让
                 acc_now = self.db.get_account(alias)
                 if acc_now and acc_now.hosting_enabled and acc_now.enabled and acc_now.evade_state != "evading":
-                    delay = backoff_intervals[min(backoff_idx, len(backoff_intervals) - 1)]
-                    backoff_idx += 1
-                    logger.warning("[%s] 托管连接非正常断开，指数退避自愈守护将于 %.1f 秒后自动重新登录连接...", alias, delay)
-                    await asyncio.sleep(delay)
+                    logger.warning(
+                        "[%s] 托管长连接非正常断开 (收到服务端 EOF/Reset)，零容忍立即触发防互踢避让以保护微端玩家！",
+                        alias,
+                    )
+                    self.trigger_evade(alias, reason="微端登录让位 (EOF断开)", probe_delay_sec=3600.0)
+                    continue
 
             except asyncio.CancelledError:
                 logger.info("[%s] 托管工作协程安全取消", alias)
+                active_client = self._sessions.get(alias, {}).pop("client", None)
+                if active_client:
+                    try:
+                        active_client.abort()
+                    except Exception:
+                        pass
                 break
             except Exception as exc:
                 logger.error("[%s] 托管工作协程异常: %s", alias, exc, exc_info=True)
@@ -535,7 +688,7 @@ class AccountSessionManager:
         reason: str = "duplicate_login",
         probe_delay_sec: float = 3600.0,
     ) -> None:
-        """捕获到玩家自登或顶号包，触发防互踢避让
+        """捕获到玩家自登或顶号包，触发防互踢避让 (底层强杀连接以瞬间让位)
 
         Args:
             alias: 账号别名。
@@ -543,20 +696,29 @@ class AccountSessionManager:
             probe_delay_sec: 静默探测冷却时长 (秒)。
         """
         now = time.time()
+        # 0. 避让联动关停长连接托管开关，保证界面行为与物理状态严格一致
+        self.db.set_hosting_state(alias, False)
         self.db.set_evade_state(alias, evade_state="evading", evade_since=now)
 
         if alias not in self._sessions:
             self._sessions[alias] = {}
+        self._sessions[alias]["hosting_enabled"] = False
         self._sessions[alias]["connection_status"] = "disconnected"
+        self._sessions[alias]["evade_reason"] = reason
+        self._sessions[alias]["evade_probe_at"] = now + probe_delay_sec
 
-        # 若存在活跃 client，立即主动断开以避让玩家
+        # 1. 若存在活跃 client，底层通过 transport.abort() 瞬间强杀以释放网关会话
         active_client = self._sessions[alias].pop("client", None)
         if active_client:
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(active_client.disconnect())
-            except RuntimeError:
-                pass
+                active_client.abort()
+            except Exception as e:
+                logger.warning("[%s] 强杀活跃连接异常: %s", alias, e)
+
+        # 2. 立即取消当前常驻守护协程，杜绝后台重试与抢线
+        if alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
+            self._hosting_tasks[alias].cancel()
+            self._hosting_tasks.pop(alias, None)
 
         # 调度静默探测
         self._silent_probes[alias] = now + probe_delay_sec
@@ -564,10 +726,19 @@ class AccountSessionManager:
         self.event_bus.publish(
             "ACCOUNT_EVADED",
             {
+                "type": "ACCOUNT_EVADED",
                 "alias": alias,
                 "reason": reason,
                 "timestamp": now,
                 "probe_delay_sec": probe_delay_sec,
+            },
+        )
+        self.event_bus.publish(
+            "ACCOUNT_DISCONNECTED",
+            {
+                "type": "ACCOUNT_DISCONNECTED",
+                "alias": alias,
+                "timestamp": now,
             },
         )
         self.event_bus.publish(
@@ -580,7 +751,7 @@ class AccountSessionManager:
             },
         )
         logger.warning(
-            "[%s] 触发防互踢避让 (原因: %s)，自动挂起重连定时器！静默探测将于 %.1fs 后就绪",
+            "[%s] 触发防互踢避让 (原因: %s)，已联动关闭长连接托管！静默探测将于 %.1fs 后就绪",
             alias,
             reason,
             probe_delay_sec,
@@ -599,20 +770,64 @@ class AccountSessionManager:
         if not acc:
             return False
 
-        # 1. 重置避让状态
+        # 1. 强制设为开启托管并重置避让状态
+        self.db.set_hosting_state(alias, True)
         self.db.set_evade_state(alias, evade_state="none", evade_since=0.0)
         self._silent_probes.pop(alias, None)
 
+        self._sessions.setdefault(alias, {})
+        self._sessions[alias]["hosting_enabled"] = True
+        self._sessions[alias]["connection_status"] = "connecting"
+        self._sessions[alias]["evade_state"] = "none"
+
         # 2. 重新建立长连接托管
-        if acc.hosting_enabled and acc.enabled:
+        if acc.enabled:
             self.start_hosting(alias)
 
         self.event_bus.publish(
-            "ACCOUNT_RESUMED",
-            {"alias": alias, "timestamp": time.time()},
+            "ACCOUNT_CONNECTING",
+            {"type": "ACCOUNT_CONNECTING", "alias": alias, "timestamp": time.time()},
         )
-        logger.info("[%s] 避让状态已解除，已成功恢复在线托管！", alias)
+        self.event_bus.publish(
+            "ACCOUNT_RESUMED",
+            {"type": "ACCOUNT_RESUMED", "alias": alias, "timestamp": time.time()},
+        )
+        logger.info("[%s] 避让状态已解除，已成功恢复在线托管 (正在握手)...", alias)
         return True
+
+    def evade_all(self, reason: str = "用户手动全员避让", probe_delay_sec: float = 3600.0) -> int:
+        """一键全员防互踢避让 (强制断开全部在线长连接)
+
+        Args:
+            reason: 避让原因描述。
+            probe_delay_sec: 静默探测冷却时长 (秒)。
+
+        Returns:
+            成功触发避让的账号数量。
+        """
+        count = 0
+        accounts = self.db.list_accounts()
+        for acc in accounts:
+            if acc.enabled:
+                self.trigger_evade(acc.alias, reason=reason, probe_delay_sec=probe_delay_sec)
+                count += 1
+        logger.info("已完成全员防互踢避让操作，共计避让 %d 个账号", count)
+        return count
+
+    def resume_all(self) -> int:
+        """一键全员退出避让并恢复在线托管 (全员强制拉起)
+
+        Returns:
+            成功恢复在线托管的账号数量。
+        """
+        count = 0
+        accounts = self.db.list_accounts()
+        for acc in accounts:
+            if acc.enabled:
+                if self.resume_hosting(acc.alias):
+                    count += 1
+        logger.info("已完成全员避让恢复操作，共计恢复 %d 个账号", count)
+        return count
 
     def check_silent_probes(self) -> List[str]:
         """轮询并执行到达冷却时间的静默探测自愈

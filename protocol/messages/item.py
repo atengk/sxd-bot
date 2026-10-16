@@ -219,6 +219,118 @@ class ItemSellItemResp(BasePacket):
 
 
 @dataclass
+class ItemPlayerUseGridItemReq(BasePacket):
+    """使用背包指定格位物品 (Mod 2, Act 53) - [ROUTINE_FREE]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    grid_id: int
+
+    def __init__(self, grid_id: int) -> None:
+        super().__init__(mod=2, act=53)
+        self.grid_id = grid_id
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_int16(self.grid_id)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemPlayerUseGridItemReq":
+        reader = ByteArrayReader(data)
+        gid = reader.read_int16() if reader.remaining >= 2 else 0
+        return cls(grid_id=gid)
+
+
+@dataclass
+class ItemPlayerUseGridItemResp(BasePacket):
+    """使用背包物品应答 (Mod 2, Act 53) - [SAFE_READ]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    result_code: int
+
+    def __init__(self, result_code: int) -> None:
+        super().__init__(mod=2, act=53)
+        self.result_code = result_code
+
+    @property
+    def is_success(self) -> bool:
+        return self.result_code == ItemConstants.ACTION_SUCCESS or self.result_code == 0
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_uint8(self.result_code)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemPlayerUseGridItemResp":
+        reader = ByteArrayReader(data)
+        code = reader.read_uint8() if reader.remaining >= 1 else ItemConstants.ACTION_FAILED
+        return cls(result_code=code)
+
+
+@dataclass
+class ItemMovePackGridItemToWarehouseReq(BasePacket):
+    """将背包格位物品移动存入随身仓库 (Mod 2, Act 49) - [ROUTINE_FREE]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    pack_grid_id: int
+    warehouse_grid_id: int = 0
+
+    def __init__(self, pack_grid_id: int, warehouse_grid_id: int = 0) -> None:
+        super().__init__(mod=2, act=49)
+        self.pack_grid_id = pack_grid_id
+        self.warehouse_grid_id = warehouse_grid_id
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_int16(self.pack_grid_id)
+        writer.write_int16(self.warehouse_grid_id)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemMovePackGridItemToWarehouseReq":
+        reader = ByteArrayReader(data)
+        pid = reader.read_int16() if reader.remaining >= 2 else 0
+        wid = reader.read_int16() if reader.remaining >= 2 else 0
+        return cls(pack_grid_id=pid, warehouse_grid_id=wid)
+
+
+@dataclass
+class ItemDropPackGridItemReq(BasePacket):
+    """丢弃/销毁背包指定格位物品 (Mod 2, Act 46) - [ROUTINE_FREE]
+
+    @author Ateng
+    @since 2026-10-16
+    """
+
+    grid_id: int
+
+    def __init__(self, grid_id: int) -> None:
+        super().__init__(mod=2, act=46)
+        self.grid_id = grid_id
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_int16(self.grid_id)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemDropPackGridItemReq":
+        reader = ByteArrayReader(data)
+        gid = reader.read_int16() if reader.remaining >= 2 else 0
+        return cls(grid_id=gid)
+
+
+@dataclass
 class ItemAddPackGridReq(BasePacket):
     """消耗元宝开启主背包格子 (Mod 2, Act 54) - [HAZARDOUS_INGOT]
 

@@ -224,6 +224,11 @@ class ConfigDatabase:
                 conn.execute("ALTER TABLE tb_accounts ADD COLUMN player_id INTEGER NOT NULL DEFAULT 0;")
             except sqlite3.OperationalError:
                 pass
+            try:
+                # 迁移升级：若存量已启用账号存在 hosting_enabled 为 0 的，默认全量置为 1 开启长连接
+                conn.execute("UPDATE tb_accounts SET hosting_enabled = 1 WHERE enabled = 1 AND hosting_enabled = 0;")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
 
     def _auto_bootstrap_if_empty(self) -> None:

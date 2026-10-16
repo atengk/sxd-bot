@@ -95,6 +95,31 @@ class SXDClient:
         self._frame_fsm.clear()
         logger.info("TCP 长连接已完全关闭并重置状态")
 
+    def abort(self) -> None:
+        """强杀 TCP 连接 (发送 TCP RST 报文)，瞬间从 OS 层面终结连接以避让真机玩家"""
+        self._running = False
+        self.context.set_connected(False)
+        if self._writer is not None:
+            try:
+                transport = self._writer.transport
+                if transport is not None:
+                    transport.abort()
+            except Exception:
+                pass
+            self._writer = None
+
+        if self._read_task is not None and not self._read_task.done():
+            self._read_task.cancel()
+            self._read_task = None
+
+        for key, futures in self._pending_futures.items():
+            for fut in futures:
+                if not fut.done():
+                    fut.set_exception(ConnectionResetError("TCP 连接已被底层强杀"))
+        self._pending_futures.clear()
+        self._frame_fsm.clear()
+        logger.warning("TCP 长连接已被底层强杀 (transport.abort) 并瞬间重置状态")
+
     async def send_packet(self, packet: BasePacket) -> None:
         """向服务端发送单向指令封包 (不等待回复)
 
@@ -236,16 +261,31 @@ class SXDClient:
                             val = int.from_bytes(body[3 + i * 9 : 11 + i * 9], "big")
                             if prop_id == 18:
                                 self.context.update_level(val)
-                                logger.info("玩家等级权威更新: %d 级", val)
+                                logger.info("玩家等级更新: %d 级", val)
                             elif prop_id == 19:
+                                old_ingots = self.context.player.ingots
+                                diff = val - old_ingots
                                 self.context.update_ingots(val)
-                                logger.info("玩家元宝权威更新: %d", val)
+                                if old_ingots > 0 and diff != 0:
+                                    logger.info("玩家元宝更新: 当前总额 %d (变动 %+d)", val, diff)
+                                else:
+                                    logger.info("玩家元宝更新: 当前总额 %d", val)
                             elif prop_id == 20:
+                                old_coins = self.context.player.coins
+                                diff = val - old_coins
                                 self.context.update_coins(val)
-                                logger.info("玩家铜钱权威更新: %d", val)
+                                if old_coins > 0 and diff != 0:
+                                    logger.info("玩家铜钱更新: 当前总额 %d (变动 %+d)", val, diff)
+                                else:
+                                    logger.info("玩家铜钱更新: 当前总额 %d", val)
                             elif prop_id in (23, 77):
+                                old_power = self.context.player.power
+                                diff = val - old_power
                                 self.context.update_power(val)
-                                logger.info("玩家体力权威更新: %d 点", val)
+                                if old_power >= 0 and diff != 0:
+                                    logger.info("玩家体力更新: 当前剩余 %d 点 (变动 %+d)", val, diff)
+                                else:
+                                    logger.info("玩家体力更新: 当前剩余 %d 点", val)
                             elif prop_id == 37:
                                 self.context.update_fame(val)
                             elif prop_id == 39:

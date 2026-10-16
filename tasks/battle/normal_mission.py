@@ -92,6 +92,14 @@ class NormalMissionSweepTask(BaseTask):
             except Exception as exc:
                 logger.warning("城镇切换异常 (尝试继续): %s", exc)
 
+        # 3.5 前置背包空间自理守卫：若背包空格紧张 (< 5 格)，自动执行四阶自理流水线腾挪空间
+        try:
+            from tasks.routine.item_clean import ItemCleanTask
+            clean_task = ItemCleanTask(target_empty=5)
+            await clean_task.execute(client, ctx)
+        except Exception as clean_err:
+            logger.warning("扫荡前置背包清理守卫执行异常 (继续尝试扫荡): %s", clean_err)
+
         # 4. 循环执行全额扫荡与极速秒加速，直至体力耗尽 (< 5 点或到达保留阈值)
         loop_count = 0
         while ctx.player.power >= 5 and ctx.player.power > self.min_power_reserve:
