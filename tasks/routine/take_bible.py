@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # Mod 30 TakeBible 状态码常量
 SUCCESS = 8
 FULL_TAKE_BIBLE_TIMES = 17
+NOT_ENOUGH_INGOT = 15
 
 
 class TakeBibleTask(BaseTask):
@@ -32,6 +33,15 @@ class TakeBibleTask(BaseTask):
     interval_sec = 0.0  # 单次日常巡检
 
     async def execute(self, client: SXDClient, ctx: GameContext) -> TaskResult:
+        """执行西天取经日常护送任务
+
+        Args:
+            client: 已建立的长连接客户端。
+            ctx: 游戏全局运行时上下文。
+
+        Returns:
+            TaskResult: 任务执行结果。
+        """
         logger.info("开始执行西天取经护送巡检流水线...")
 
         if not ctx.is_connected:
@@ -43,38 +53,36 @@ class TakeBibleTask(BaseTask):
             logger.info(msg)
             return TaskResult.skipped(msg, data={"bible": False})
 
-        # 城镇场景安全守卫：西天取经 NPC 位于主线城镇，处于高阶跨服/圣域城镇 (如城镇ID=29) 时直接发包会触发网关跨图断连
-        if ctx.town.town_id > 10:
-            msg = f"当前角色处于高阶城镇 (城镇ID={ctx.town.town_id})，非取经NPC专属场景，安全跳过防断连"
-            logger.info(msg)
-            return TaskResult.skipped(msg, data={"bible": False, "town_id": ctx.town.town_id})
-
         started = False
         try:
-            # 1. 查询当前护送状态与剩余次数 (Mod 100, Act 46: get_take_bible_info)
-            req_info = PacketBuilder(mod=100, act=46).build()
-            resp_info = await client.request(req_info, timeout_sec=3.0)
-            logger.info("西天取经状态同步成功 (响应载荷: %d 字节, 十六进制: %s)", len(resp_info), resp_info.hex())
+            # 1. 查询当前护送状态与剩余次数 (Mod 30, Act 2: get_take_bible_info)
+            req_info = PacketBuilder(mod=30, act=2).build()
+            resp_info = await client.request(req_info, timeout_sec=2.5)
+            logger.info("西天取经状态同步成功 (响应载荷: %d 字节, 十六进制: %s)", len(resp_info), resp_info.hex()[:40])
 
-            # 2. 严格零元宝：直接调用免费启动护送 (Mod 100, Act 35: start_take_bible)
-            req_start = PacketBuilder(mod=100, act=35).build()
-            resp_start = await client.request(req_start, timeout_sec=3.0)
-            reader_start = ByteArrayReader(resp_start)
-
-            if reader_start.remaining >= 1:
-                status_code = reader_start.read_uint8()
-                if status_code == 0:
+            # 2. 严格零元宝：直接调用免费启动护送 (Mod 30, Act 10: start_take_bible)
+            req_start = PacketBuilder(mod=30, act=10).build()
+            resp_start = await client.request(req_start, timeout_sec=2.0)
+            if resp_start and len(resp_start) >= 1:
+                status = resp_start[0]
+                if status == SUCCESS:
                     started = True
-                    logger.info("成功启动西天取经免费护送！(状态码=%d, 零元宝)", status_code)
+                    logger.info("西天取经护送成功启程！将收获巨额铜钱与声望奖励 (零元宝)")
+                elif status == FULL_TAKE_BIBLE_TIMES:
+                    logger.info("今日西天取经免费护送次数已用尽")
                 else:
-                    logger.info("西天取经今日已在进行中或护送次数已满 (状态码=%d)", status_code)
+                    logger.info("取经启动返回状态码: %d", status)
+
+            msg = f"西天取经巡检完成: 取经状态={'已启动' if started else '就绪/无免费配额'} (零元宝)"
+            logger.info(msg)
+            return TaskResult.success(msg, data={"started": started, "bible": True})
+
+        except TimeoutError:
+            # 处于圣域城镇或非活动开放窗口时服务端不回包，安全优雅降级
+            msg = "当前城镇或时段西天取经服务暂未就绪，安全跳过防断连"
+            logger.info(msg)
+            return TaskResult.skipped(msg, data={"bible": False, "timeout": True})
 
         except Exception as exc:
-            logger.warning("西天取经执行异常: %s", exc)
-
-        if started:
-            msg = "成功启动西天取经免费护送 (零元宝)"
-            return TaskResult.success(msg, data={"started": True})
-        else:
-            msg = "西天取经巡检完成: 今日护送已在进行中或次数耗尽"
-            return TaskResult.success(msg, data={"started": False})
+            logger.warning("西天取经流水线执行异常: %s", exc)
+            return TaskResult.skipped(f"西天取经异常跳过: {exc}")

@@ -1,7 +1,8 @@
 """神仙道吉星高照免费福利自动化流水线任务 (Mod 38, Mod_RollCake_Base)
 
 对接官方微端吉星高照协议，自动查询每日免费投掷次数与累计境界点，
-优先结算存量奖励，安全巡检免费投掷机会，严格遵守零元宝安全红线 (绝不元宝改命、绝不购买次数)。
+自适应 VIP 托管状态（is_auto=1 时直接结算存量境界点，is_auto=0 时循环投掷），
+严格遵守零元宝安全红线 (绝不元宝改命、绝不购买挑战次数)。
 
 @author Ateng
 @since 2026-10-16
@@ -17,6 +18,14 @@ from protocol.packet import ByteArrayReader
 
 logger = logging.getLogger(__name__)
 
+# Mod 38 常量
+SUCCESS = 0
+FAILURE = 1
+NOT_ENOUGH_INGOT = 2
+NO_CHANG_LUCK_TIMES = 3
+NO_RECORD = 4
+HAVE_RECORD = 5
+
 
 class LuckyStarTask(BaseTask):
     """吉星高照免费投掷与奖励结算任务
@@ -29,6 +38,15 @@ class LuckyStarTask(BaseTask):
     interval_sec = 0.0  # 单次日常巡检
 
     async def execute(self, client: SXDClient, ctx: GameContext) -> TaskResult:
+        """执行吉星高照日常巡检与奖励提取
+
+        Args:
+            client: 已建立的长连接客户端。
+            ctx: 游戏全局运行时上下文。
+
+        Returns:
+            TaskResult: 任务执行结果。
+        """
         logger.info("开始执行吉星高照 (RollCake) 免费投掷与奖励结算巡检...")
 
         if not ctx.is_connected:
@@ -57,13 +75,13 @@ class LuckyStarTask(BaseTask):
             logger.warning("查询吉星高照状态失败: %s", exc)
             return TaskResult.skipped("吉星高照状态同步超时或功能未开放")
 
-        # 2. 查询是否已开启自动吉星 (Mod 38, Act 6: is_auto)
+        # 2. 查询是否已开启自动吉星托管 (Mod 38, Act 6: is_auto)
         is_auto_active = False
         try:
             resp_auto = await client.request(PacketBuilder(mod=38, act=6).build(), timeout_sec=1.5)
             if len(resp_auto) > 0 and resp_auto[0] == 1:
                 is_auto_active = True
-                logger.info("吉星高照已处于托管自动投掷状态 (is_auto=1)")
+                logger.info("吉星高照处于托管自动投掷状态 (is_auto=1)")
         except Exception:
             pass
 
@@ -72,7 +90,7 @@ class LuckyStarTask(BaseTask):
         try:
             req_award = PacketBuilder(mod=38, act=4).build()
             resp_award = await client.request(req_award, timeout_sec=1.5)
-            if len(resp_award) > 0 and resp_award[0] == 0:  # 0 = SUCCESS
+            if len(resp_award) > 0 and resp_award[0] == SUCCESS:
                 claimed_existing_award = True
                 logger.info("成功领取吉星高照存量奖励！境界点已自动入库")
         except Exception as exc:
@@ -91,14 +109,14 @@ class LuckyStarTask(BaseTask):
                 "is_auto": is_auto_active,
             })
 
-        # 5. 执行免费投掷循环 (严格零元宝)
+        # 5. 执行免费投掷循环 (严格零元宝，仅在未托管时手动发包)
         rolls_done = 0
         try:
             if is_auto_active:
                 logger.info("吉星高照已处于系统托管自动投掷状态 (is_auto=1)，已自动结算，无需手动发包 (零断连)")
                 rolls_done = free_times
             else:
-                # 只有未开启托管时才激活面板并执行手动投掷
+                # 激活面板状态并执行手动免费投掷
                 await client.send_packet(PacketBuilder(mod=38, act=5).build())
                 while free_times > 0 and rolls_done < 10:
                     await client.send_packet(PacketBuilder(mod=38, act=0).build())

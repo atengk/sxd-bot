@@ -58,6 +58,14 @@ from tasks.routine.touch_stone import GoldenTouchStoneTask
 from tasks.routine.weekend import WeekendRevelryTask
 from tasks.routine.assistant import AssistantTask
 from tasks.routine.practice import PracticeTask
+from tasks.routine.hunt_demon import HuntDemonTask
+from tasks.routine.five_elements import FiveElementsTask
+from tasks.routine.five_fu import FiveFuTask
+from tasks.routine.nimbus import NimbusTask
+from tasks.routine.link_fate import LinkFateTask
+from tasks.routine.home import HomeTask
+from tasks.routine.union_worship import UnionWorshipTask
+from tasks.routine.memory_zone import MemoryZoneTask
 
 
 # 配置标准受管日志
@@ -176,6 +184,22 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         "weekend": WeekendRevelryTask(),
         "assistant": AssistantTask(),
         "practice": PracticeTask(),
+        "hunt_demon": HuntDemonTask(),
+        "demon": HuntDemonTask(),
+        "five_elements": FiveElementsTask(),
+        "five": FiveElementsTask(),
+        "five_fu": FiveFuTask(),
+        "fu": FiveFuTask(),
+        "nimbus": NimbusTask(),
+        "ling": NimbusTask(),
+        "link_fate": LinkFateTask(),
+        "fate_box": LinkFateTask(),
+        "home": HomeTask(),
+        "marry_home": HomeTask(),
+        "union_worship": UnionWorshipTask(),
+        "worship_union": UnionWorshipTask(),
+        "memory_zone": MemoryZoneTask(),
+        "memory": MemoryZoneTask(),
     }
 
     if specific_task and specific_task != "all":
@@ -185,15 +209,17 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         else:
             logger.warning("未识别的任务指令: %s，支持项: %s", specific_task, list(task_map.keys()))
     else:
-        # 默认依序注册全功能日常与战斗流水线 (共 27 大自动化引擎)
+        # 默认依序注册全功能日常与战斗流水线 (共 35 大自动化引擎)
         scheduler.register(AssistantTask(is_post_routine=False))  # 前置：小助手状态感知
         scheduler.register(DailySignInTask())
         scheduler.register(EmailTask())                           # 邮件附件与更新补偿一键提取
         scheduler.register(FreeMoneyTreeTask())
         scheduler.register(FactionWorshipTask())
         scheduler.register(FactionRollCakeTask())
+        scheduler.register(UnionWorshipTask())                    # 仙盟上香白檀香祈福
         scheduler.register(LuckyStarTask())
         scheduler.register(FarmTask())
+        scheduler.register(HomeTask())                            # 仙府家园家具收益与蛋糕
         scheduler.register(PeachAndPetTask())
         scheduler.register(AskFairyTask())                        # 仙道问灵每日免费求签
         scheduler.register(GoldenTouchStoneTask())                # 点金石免费点石与助友
@@ -202,6 +228,12 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         scheduler.register(FishingTask())
         scheduler.register(TowerTask())
         scheduler.register(FateHuntTask())
+        scheduler.register(LinkFateTask())                        # 缘魂宝箱批量开启与整理
+        scheduler.register(HuntDemonTask())                       # 每日猎妖10次免费挑战
+        scheduler.register(FiveElementsTask())                    # 五行背包自动梳理整理
+        scheduler.register(FiveFuTask())                          # 五福临门节庆福利探测
+        scheduler.register(NimbusTask())                          # 聚灵天地灵气免费汇聚
+        scheduler.register(MemoryZoneTask())                      # 回忆之境通关里程碑大奖
         scheduler.register(TakeBibleTask())
         scheduler.register(TravelEventTask())
         scheduler.register(ItemCleanTask())
