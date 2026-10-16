@@ -87,7 +87,25 @@ def load_config(config_path: str) -> AppConfig:
     @author Ateng
     @since 2026-10-16
     """
-    return ConfigManager.load(config_path)
+    cfg = ConfigManager.load(config_path)
+    if not cfg.accounts and os.path.exists("data/config.sqlite"):
+        try:
+            from storage.config_db import ConfigDatabase
+            cdb = ConfigDatabase()
+            for acc in cdb.list_accounts():
+                cfg.accounts.append(
+                    AccountConfig(
+                        alias=acc.alias,
+                        username=acc.username,
+                        password=acc.password,
+                        server=acc.server,
+                        enabled=acc.enabled,
+                        platform=acc.platform,
+                    )
+                )
+        except Exception:
+            pass
+    return cfg
 
 
 async def run_headless_bot_single_account(
@@ -520,6 +538,18 @@ def print_execution_summary(account: Optional[AccountConfig], ctx: GameContext, 
 
 def main() -> None:
     """命令行 CLI 主入口"""
+    # 0. 优先支持 python main.py web 子命令拉起常驻守护服务
+    if len(sys.argv) > 1 and sys.argv[1] == "web":
+        from cli.__main__ import run_web_server
+        sub_parser = argparse.ArgumentParser(description="启动 Web 守护服务")
+        sub_parser.add_argument("--host", default="0.0.0.0", help="监听地址")
+        sub_parser.add_argument("--port", type=int, default=8000, help="监听端口")
+        sub_parser.add_argument("--reload", action="store_true", help="热重载")
+        sub_parser.add_argument("--token", default=None, help="临时口令")
+        web_args = sub_parser.parse_args(sys.argv[2:])
+        run_web_server(web_args)
+        return
+
     parser = argparse.ArgumentParser(description="神仙道无头协议自动化工具 (SXD Bot)")
     parser.add_argument(
         "--config",
@@ -563,6 +593,11 @@ def main() -> None:
         help="将查询结果以标准格式化 JSON 输出",
     )
     parser.add_argument(
+        "--no-proxy",
+        action="store_true",
+        help="强制跳过中央 Web 守护代理，直接建立底层 Socket 连接",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -576,8 +611,22 @@ def main() -> None:
 
     config = load_config(args.config)
 
-    # 若指定了 --query 模式，直接进入独立只读查询生命周期并安全退出
+    # 1. 若指定了 --query 模式，优先检测中央守护服务 (Central Daemon Proxy) 代理只读查询
     if args.query:
+        if not args.no_proxy:
+            from cli.daemon_proxy import DaemonProxy
+            proxy = DaemonProxy()
+            if proxy.is_alive():
+                from cli.__main__ import handle_query_command
+                handle_query_command(
+                    query_target=args.query,
+                    alias=args.account,
+                    as_json=args.json,
+                    no_proxy=False,
+                    config_path=args.config,
+                )
+                return
+
         try:
             asyncio.run(run_query_mode(config, query_target=args.query, as_json=args.json, account_filter=args.account))
         except KeyboardInterrupt:
@@ -585,6 +634,20 @@ def main() -> None:
         return
 
     mode = "daemon" if args.daemon else "once"
+
+    # 2. 若为单次日常/指定任务模式，且未开启常驻 daemon，优先检测中央守护服务代理分发
+    if mode == "once" and not args.no_proxy:
+        from cli.daemon_proxy import DaemonProxy
+        proxy = DaemonProxy()
+        if proxy.is_alive():
+            from cli.__main__ import handle_routine_command
+            handle_routine_command(
+                alias=args.account,
+                task_name=args.task,
+                no_proxy=False,
+                config_path=args.config,
+            )
+            return
 
     try:
         asyncio.run(run_headless_bot(config, mode=mode, specific_task=args.task, account_filter=args.account))
