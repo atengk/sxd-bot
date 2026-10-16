@@ -9,11 +9,13 @@
 
 import asyncio
 import logging
+import os
 import time
 from typing import Dict, Any, Optional, List, Callable
 
 from core.events import EventBus
 from storage.config_db import ConfigDatabase, AccountRecord
+from storage.player_db import PlayerDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,57 @@ class AccountSessionManager:
         self.event_bus = event_bus or EventBus()
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._silent_probes: Dict[str, float] = {}
+        self._player_dbs: Dict[str, PlayerDatabase] = {}
+
+    def get_player_db(self, alias: str) -> Optional[PlayerDatabase]:
+        """获取指定账号绑定的角色私有数据库实例
+
+        Args:
+            alias: 账号别名。
+
+        Returns:
+            PlayerDatabase 实体或 None。
+        """
+        if alias in self._player_dbs:
+            return self._player_dbs[alias]
+
+        acc = self.db.get_account(alias)
+        if not acc:
+            return None
+
+        # 尝试查找已存在的本地数据文件 storage_{server_id}_*.db
+        data_dir = "data"
+        db_path = None
+        if os.path.exists(data_dir):
+            prefix = f"storage_{acc.server_id}_"
+            for fname in os.listdir(data_dir):
+                if fname.startswith(prefix) and fname.endswith(".db"):
+                    db_path = os.path.join(data_dir, fname)
+                    break
+
+        if db_path:
+            player_id = 1
+            try:
+                parts = os.path.splitext(os.path.basename(db_path))[0].split("_")
+                if len(parts) >= 3:
+                    player_id = int(parts[2])
+            except Exception:
+                pass
+            pdb = PlayerDatabase(server_id=acc.server_id, player_id=player_id, db_path=db_path)
+        else:
+            pdb = PlayerDatabase(server_id=acc.server_id, player_id=acc.server_id or 1001, base_dir=data_dir)
+
+        self._player_dbs[alias] = pdb
+        return pdb
+
+    def set_player_db(self, alias: str, player_db: PlayerDatabase) -> None:
+        """显式注入账号绑定的 PlayerDatabase 实例 (主要用于测试与多工作区调度)
+
+        Args:
+            alias: 账号别名。
+            player_db: 角色私有数据库实例。
+        """
+        self._player_dbs[alias] = player_db
 
     def get_session_info(self, alias: str) -> Dict[str, Any]:
         """获取账号当前会话运行状态

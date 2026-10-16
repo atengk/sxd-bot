@@ -116,6 +116,7 @@ def create_app(
     from web.routes.accounts import router as accounts_router
     from web.routes.routines import router as routines_router
     from web.routes.events import router as events_router
+    from web.routes.telemetry import router as telemetry_router
     from web.logging_bridge import attach_log_bridge
 
     app = FastAPI(
@@ -175,6 +176,9 @@ def create_app(
 
     # 5. 注册 SSE 实时事件与日志推送路由器
     app.include_router(events_router)
+
+    # 6. 注册全景遥测、100格背包快照与元宝审计路由器
+    app.include_router(telemetry_router)
 
     # 4. 注册额外外部业务路由器
     if routers:

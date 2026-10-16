@@ -167,7 +167,12 @@ class TestWebRoutinesAndSSE(unittest.TestCase):
         """测试 SSE 基于账号别名 ?alias={alias} 进行事件流精准过滤"""
         import threading
         def emit_events():
-            time.sleep(0.05)
+            # 等待 SSE 通道在 EventBus 上完成订阅注册
+            for _ in range(100):
+                if len(self.event_bus._global_app_listeners) > 0:
+                    break
+                time.sleep(0.01)
+            time.sleep(0.02)
             # 1. 发布打工小号的事件 (应被过滤不推送)
             self.event_bus.publish(
                 "routine_step",
@@ -182,7 +187,7 @@ class TestWebRoutinesAndSSE(unittest.TestCase):
         t = threading.Thread(target=emit_events)
         t.start()
 
-        resp = self.client.get("/api/events?alias=主号&limit=2")
+        resp = self.client.get("/api/events?alias=主号&limit=2&max_idle_sec=2.0")
         t.join()
 
         self.assertEqual(resp.status_code, 200)

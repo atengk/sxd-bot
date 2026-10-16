@@ -469,60 +469,23 @@
       <!-- Tab 1: 资产态势 (背包与伙伴) -->
       <div id="content-assets" class="space-y-5">
         <div>
-          <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider mb-2">主背包道具网格 (前 30 格快照)</h3>
-          <div class="grid grid-cols-6 gap-2 bg-slate-950 p-3 rounded-xl border border-slate-800">
-            <!-- 模拟背包物品格子 -->
-            <div class="h-12 bg-slate-900 border border-amber-500/60 rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell" title="真·万寿无疆 (金色命格)">
-              <span class="text-amber-400 text-[10px] font-bold">万寿</span>
-              <span class="text-[9px] text-amber-300/80">Lv 10</span>
-            </div>
-            <div class="h-12 bg-slate-900 border border-purple-500/60 rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell" title="天罡神剑 (强化·神)">
-              <span class="text-purple-400 text-[10px] font-bold">天罡剑</span>
-              <span class="text-[9px] text-purple-300/80">+12</span>
-            </div>
-            <div class="h-12 bg-slate-900 border border-sky-500/60 rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell" title="体力丹 x5">
-              <span class="text-sky-400 text-[10px] font-bold">体力丹</span>
-              <span class="text-[9px] text-slate-300">x5</span>
-            </div>
-            <div class="h-12 bg-slate-900 border border-emerald-500/60 rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell" title="白玉牌 x42">
-              <span class="text-emerald-400 text-[10px] font-bold">白玉牌</span>
-              <span class="text-[9px] text-slate-300">x42</span>
-            </div>
-            <div class="h-12 bg-slate-900 border border-slate-700 rounded flex flex-col items-center justify-center text-xs text-slate-400 relative cursor-pointer grid-cell" title="生锈的铁剑 (白装杂物)">
-              <span class="text-[10px]">铁剑</span>
-              <span class="text-[9px] text-slate-500">杂物</span>
-            </div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
-            <div class="h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-xs">空</div>
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider">主背包道具全景网格 (100格只读快照)</h3>
+            <span class="text-xs text-sky-400">只读快照 · 不会触发误变卖</span>
+          </div>
+          <div id="inventoryGrid" class="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-1.5 bg-slate-950 p-3 rounded-xl border border-slate-800 max-h-72 overflow-y-auto custom-scroll">
+            <!-- 动态渲染 100 格 -->
           </div>
           <p class="text-[11px] text-slate-500 mt-1.5 flex items-center justify-between">
-            <span>当前背包负荷: 28 / 100</span>
-            <span class="text-sky-400">只读快照 · 不会触发误变卖</span>
+            <span id="inventoryLoadText">当前背包负荷: 0 / 100</span>
+            <span class="text-slate-400">金/紫/蓝/白品质边框 · 点击查看道具详情</span>
           </p>
         </div>
 
         <div>
           <h3 class="text-xs font-semibold uppercase text-slate-400 tracking-wider mb-2">出战伙伴阵容 (Roles)</h3>
-          <div class="grid grid-cols-2 gap-3">
-            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center space-x-3">
-              <div class="w-9 h-9 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center font-bold text-xs">聂</div>
-              <div>
-                <p class="text-xs font-bold text-slate-200">聂小倩 (术士)</p>
-                <p class="text-[11px] text-slate-400">Lv 128 · 绝技: 离魂</p>
-              </div>
-            </div>
-            <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center space-x-3">
-              <div class="w-9 h-9 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center font-bold text-xs">将</div>
-              <div>
-                <p class="text-xs font-bold text-slate-200">将臣 (将星)</p>
-                <p class="text-[11px] text-slate-400">Lv 128 · 绝技: 霸者横栏</p>
-              </div>
-            </div>
+          <div id="lineupGrid" class="grid grid-cols-2 gap-3">
+            <!-- 动态渲染伙伴列表 -->
           </div>
         </div>
       </div>
@@ -532,45 +495,18 @@
         <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <div class="flex items-center justify-between mb-2">
             <span class="text-xs font-semibold text-slate-300">今日活跃度宝箱进度</span>
-            <span class="text-xs font-mono font-bold text-emerald-400">110 / 140 活跃点</span>
+            <span id="livenessText" class="text-xs font-mono font-bold text-emerald-400">0 / 100 活跃点</span>
           </div>
           <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-            <div class="bg-gradient-to-r from-sky-500 to-emerald-400 h-full rounded-full" style="width: 78.5%"></div>
+            <div id="livenessBar" class="bg-gradient-to-r from-sky-500 to-emerald-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <div id="assistantChestsContainer" class="grid grid-cols-5 gap-2 mt-3 pt-3 border-t border-slate-800/80">
+            <!-- 动态渲染 5 档活跃度宝箱 -->
           </div>
         </div>
 
-        <div class="space-y-2 text-xs">
-          <div class="p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <p class="font-bold text-slate-200">仙府药园 (除草与浇水)</p>
-              <p class="text-slate-400 text-[11px]">免费配额已完成 · 获得铜钱 +800,000</p>
-            </div>
-            <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded">已达成</span>
-          </div>
-
-          <div class="p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <p class="font-bold text-slate-200">摘仙桃 (桃园摘桃挑战)</p>
-              <p class="text-slate-400 text-[11px]">今日 5/5 次挑战已全胜</p>
-            </div>
-            <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded">已达成</span>
-          </div>
-
-          <div class="p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <p class="font-bold text-slate-200">竞技场天梯挑战</p>
-              <p class="text-slate-400 text-[11px]">已完成 5 次软柿子挑战，声望 +500</p>
-            </div>
-            <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded">已达成</span>
-          </div>
-
-          <div class="p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <p class="font-bold text-slate-200">吉星高照 (摇骰子)</p>
-              <p class="text-slate-400 text-[11px]">剩余 3 次免费掷骰配额</p>
-            </div>
-            <span class="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded">待触发</span>
-          </div>
+        <div id="assistantItemsContainer" class="space-y-2 text-xs">
+          <!-- 动态渲染日常小助手列表 -->
         </div>
       </div>
 
@@ -663,64 +599,20 @@
       <div id="content-audit" class="space-y-4 hidden">
         <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
           <p class="text-xs font-semibold text-slate-300 mb-3">近 7 日铜钱与元宝资产走势 (SQLite 仓储)</p>
-          <!-- 简单可视化 SVG 折线图原型 -->
-          <div class="h-32 w-full flex items-end space-x-3 pt-4 border-b border-slate-800">
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-amber-500/80 rounded-t" style="height: 60%"></div>
-              <span class="text-[10px] text-slate-400">10-10</span>
-            </div>
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-amber-500/80 rounded-t" style="height: 68%"></div>
-              <span class="text-[10px] text-slate-400">10-11</span>
-            </div>
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-amber-500/80 rounded-t" style="height: 75%"></div>
-              <span class="text-[10px] text-slate-400">10-12</span>
-            </div>
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-amber-500/80 rounded-t" style="height: 82%"></div>
-              <span class="text-[10px] text-slate-400">10-13</span>
-            </div>
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-amber-500/80 rounded-t" style="height: 89%"></div>
-              <span class="text-[10px] text-slate-400">10-14</span>
-            </div>
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-amber-500/80 rounded-t" style="height: 94%"></div>
-              <span class="text-[10px] text-slate-400">10-15</span>
-            </div>
-            <div class="flex-1 flex flex-col items-center gap-1">
-              <div class="w-full bg-sky-500 rounded-t shadow-md shadow-sky-500/40" style="height: 100%"></div>
-              <span class="text-[10px] text-sky-400 font-bold">今日</span>
-            </div>
+          <!-- 动态渲染 7 日资产走势柱状图 -->
+          <div id="assetHistoryContainer" class="h-32 w-full flex items-end space-x-3 pt-4 border-b border-slate-800">
+            <!-- 动态填充 -->
           </div>
           <div class="flex justify-between text-[11px] text-slate-400 mt-2">
-            <span>初始: 1.25 亿</span>
-            <span class="text-amber-300 font-bold">当前: 1.82 亿 (+45.6%)</span>
+            <span id="assetHistoryStart">初始: -</span>
+            <span id="assetHistoryCurrent" class="text-amber-300 font-bold">当前: -</span>
           </div>
         </div>
 
         <div>
-          <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">高危元宝消耗审计日志</h4>
-          <div class="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs space-y-2">
-            <div class="flex items-center justify-between text-slate-400 text-[11px]">
-              <span>时间</span>
-              <span>动作</span>
-              <span>消耗量</span>
-              <span>风控状态</span>
-            </div>
-            <div class="flex items-center justify-between text-slate-300">
-              <span class="text-slate-500 font-mono">10-16 16:40</span>
-              <span>查询帮派高级敬香</span>
-              <span class="text-amber-400 font-mono">0 元宝</span>
-              <span class="text-emerald-400">前置只读拦截</span>
-            </div>
-            <div class="flex items-center justify-between text-slate-300">
-              <span class="text-slate-500 font-mono">10-16 15:10</span>
-              <span>吉星高照锁定元宝刷新</span>
-              <span class="text-amber-400 font-mono">0 元宝</span>
-              <span class="text-emerald-400">零元宝跳过</span>
-            </div>
+          <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">高危元宝消耗审计日志 (只读安全网)</h4>
+          <div id="auditLogsContainer" class="p-3 bg-slate-950 rounded-lg border border-slate-800 text-xs space-y-2">
+            <!-- 动态渲染元宝审计日志 -->
           </div>
         </div>
       </div>
@@ -815,14 +707,257 @@
     let allLogs = [];
     let eventSource = null;
 
-    // 抽屉控制与日常配置动态加载
+    function getAuthHeaders(extra = {}) {
+      const token = localStorage.getItem('sxd_web_token') || '';
+      const headers = { ...extra };
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      return headers;
+    }
+
+    function formatCoins(n) {
+      if (!n || isNaN(n)) return '0';
+      if (n >= 100000000) return (n / 100000000).toFixed(2) + ' 亿';
+      if (n >= 10000) return (n / 10000).toFixed(0) + ' 万';
+      return n.toLocaleString();
+    }
+
+    // 抽屉控制与多源数据动态加载
     async function openDrawer(alias) {
       currentDrawerAlias = alias;
-      document.getElementById('drawerTitle').innerText = alias + ' · 详情与设置';
-      document.getElementById('drawerSubtitle').innerText = alias === '主号' ? '138区 · 神威剑仙 (Lv 128)' : (alias === '打工小号1' ? '138区 · 摘桃圣手 (Lv 92)' : '140区 · 九天玄女 (Lv 88)');
+      const titleElem = document.getElementById('drawerTitle');
+      const subtitleElem = document.getElementById('drawerSubtitle');
+      if (titleElem) titleElem.innerText = alias + ' · 详情与设置';
+      if (subtitleElem) subtitleElem.innerText = '正在从后端 SQLite 实时同步最新态势快照...';
       document.getElementById('drawerOverlay').classList.remove('hidden');
       document.getElementById('detailDrawer').classList.remove('translate-x-full');
-      await loadRoutineConfig(alias);
+
+      await Promise.allSettled([
+        loadRoutineConfig(alias),
+        loadTelemetry(alias),
+        loadAssistant(alias),
+        loadAuditLogs(alias),
+      ]);
+    }
+
+    async function loadTelemetry(alias) {
+      try {
+        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/telemetry`, {
+          headers: getAuthHeaders(),
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        // 1. 抽屉标题与元信息更新
+        const titleElem = document.getElementById('drawerTitle');
+        const subtitleElem = document.getElementById('drawerSubtitle');
+        const avatarElem = document.getElementById('drawerAvatar');
+        if (titleElem) titleElem.innerText = `${alias} · 详情与设置`;
+        if (subtitleElem) {
+          subtitleElem.innerText = `${data.town_name || '主城'} · 角色: ${data.nickname} (Lv ${data.level} · VIP ${data.vip_level}) · 铜钱: ${formatCoins(data.coins)} · 元宝: ${data.ingots}`;
+        }
+        if (avatarElem) {
+          avatarElem.innerText = (data.nickname || alias || '仙').slice(0, 1);
+        }
+
+        // 2. 背包 100 格快照 (只读)
+        const gridElem = document.getElementById('inventoryGrid');
+        const loadElem = document.getElementById('inventoryLoadText');
+        if (gridElem) {
+          gridElem.innerHTML = '';
+          const itemsMap = {};
+          (data.inventory || []).forEach(it => {
+            itemsMap[it.grid_id] = it;
+          });
+
+          for (let i = 0; i < 100; i++) {
+            const it = itemsMap[i];
+            const cell = document.createElement('div');
+            if (it) {
+              let borderClass = 'border-slate-700 text-slate-300';
+              let nameColor = 'text-slate-200';
+              if (it.quality === 'gold') {
+                borderClass = 'border-amber-500/80 bg-slate-900 text-amber-400';
+                nameColor = 'text-amber-400';
+              } else if (it.quality === 'purple') {
+                borderClass = 'border-purple-500/80 bg-slate-900 text-purple-400';
+                nameColor = 'text-purple-400';
+              } else if (it.quality === 'blue') {
+                borderClass = 'border-sky-500/80 bg-slate-900 text-sky-400';
+                nameColor = 'text-sky-400';
+              }
+              cell.className = `h-12 bg-slate-900 border ${borderClass} rounded flex flex-col items-center justify-center text-xs relative cursor-pointer grid-cell p-0.5 transition shadow-sm`;
+              cell.title = `【${it.name}】(${it.type_desc || '道具'}) [${it.quality.toUpperCase()}] x${it.count}\n只读快照 · 不会触发误变卖`;
+              cell.innerHTML = `
+                <span class="${nameColor} text-[10px] font-bold truncate max-w-full px-0.5">${it.name.length > 4 ? it.name.slice(0, 3) + '..' : it.name}</span>
+                <span class="text-[9px] text-slate-400 font-mono">x${it.count}</span>
+              `;
+            } else {
+              cell.className = 'h-12 bg-slate-900/40 border border-slate-800/80 rounded flex items-center justify-center text-slate-700 text-[10px] select-none';
+              cell.innerText = '空';
+            }
+            gridElem.appendChild(cell);
+          }
+        }
+        if (loadElem) {
+          loadElem.innerText = `当前背包负荷: ${(data.inventory || []).length} / 100`;
+        }
+
+        // 3. 伙伴阵容列表
+        const lineupElem = document.getElementById('lineupGrid');
+        if (lineupElem) {
+          lineupElem.innerHTML = '';
+          const roles = data.roles || [];
+          roles.forEach(r => {
+            const card = document.createElement('div');
+            card.className = 'bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center space-x-3';
+            const firstLetter = (r.name || '侠').slice(0, 1);
+            card.innerHTML = `
+              <div class="w-9 h-9 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center font-bold text-xs shrink-0">
+                ${firstLetter}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center justify-between">
+                  <p class="text-xs font-bold text-slate-200 truncate">${r.name} (${r.role_job || '武将'})</p>
+                  <span class="text-[10px] px-1.5 py-0.2 rounded ${r.is_deployed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}">${r.is_deployed ? '出战' : '候补'}</span>
+                </div>
+                <p class="text-[11px] text-slate-400 mt-0.5">Lv ${r.level} · 气血: ${(r.health || 0).toLocaleString()} / ${(r.max_health || 0).toLocaleString()}</p>
+              </div>
+            `;
+            lineupElem.appendChild(card);
+          });
+        }
+      } catch (err) {
+        console.error("加载全景遥测数据失败:", err);
+      }
+    }
+
+    async function loadAssistant(alias) {
+      try {
+        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/assistant`, {
+          headers: getAuthHeaders(),
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        // 1. 活跃度与进度条
+        const livenessElem = document.getElementById('livenessText');
+        const livenessBar = document.getElementById('livenessBar');
+        const cur = data.current_liveness || 0;
+        const max = data.max_liveness || 100;
+        const pct = Math.min(100, Math.round((cur / max) * 100));
+        if (livenessElem) livenessElem.innerText = `${cur} / ${max} 活跃点`;
+        if (livenessBar) livenessBar.style.width = `${pct}%`;
+
+        // 2. 活跃度宝箱
+        const chestsElem = document.getElementById('assistantChestsContainer');
+        if (chestsElem) {
+          chestsElem.innerHTML = '';
+          (data.boxes || []).forEach(b => {
+            const boxDiv = document.createElement('div');
+            let badgeBg = 'bg-slate-800 text-slate-400 border-slate-700';
+            if (b.status === 1) badgeBg = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40';
+            else if (b.status === 0) badgeBg = 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse';
+            boxDiv.className = `p-2 bg-slate-900/80 rounded border ${badgeBg} flex flex-col items-center justify-center text-center`;
+            boxDiv.innerHTML = `
+              <span class="text-xs font-bold font-mono">${b.required_liveness}点</span>
+              <span class="text-[10px] mt-0.5">${b.status_desc || (b.status === 1 ? '已领取' : (b.status === 0 ? '可领取' : '未达标'))}</span>
+            `;
+            chestsElem.appendChild(boxDiv);
+          });
+        }
+
+        // 3. 小助手日常列表
+        const itemsElem = document.getElementById('assistantItemsContainer');
+        if (itemsElem) {
+          itemsElem.innerHTML = '';
+          (data.items || []).forEach(it => {
+            const itemRow = document.createElement('div');
+            itemRow.className = 'p-3 bg-slate-950 rounded-lg border border-slate-800 flex items-center justify-between';
+            itemRow.innerHTML = `
+              <div>
+                <p class="font-bold text-slate-200">${it.name}</p>
+                <p class="text-slate-400 text-[11px]">完成进度: ${it.completed_count} / ${it.total_quota}</p>
+              </div>
+              <span class="px-2 py-0.5 rounded text-xs ${it.is_completed ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">
+                ${it.is_completed ? '已达成' : '待完成'}
+              </span>
+            `;
+            itemsElem.appendChild(itemRow);
+          });
+        }
+      } catch (err) {
+        console.error("加载小助手数据失败:", err);
+      }
+    }
+
+    async function loadAuditLogs(alias) {
+      try {
+        const resp = await fetch(`/api/accounts/${encodeURIComponent(alias)}/audit-logs`, {
+          headers: getAuthHeaders(),
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        // 1. 7 日资产走势柱状图
+        const chartElem = document.getElementById('assetHistoryContainer');
+        const startElem = document.getElementById('assetHistoryStart');
+        const currElem = document.getElementById('assetHistoryCurrent');
+        const history = data.asset_history || [];
+        if (chartElem && history.length > 0) {
+          chartElem.innerHTML = '';
+          const maxCoins = Math.max(...history.map(h => h.coins), 1);
+          history.forEach((h, idx) => {
+            const isToday = idx === history.length - 1;
+            const barPct = Math.max(15, Math.round((h.coins / maxCoins) * 100));
+            const barDiv = document.createElement('div');
+            barDiv.className = 'flex-1 flex flex-col items-center gap-1';
+            const colorClass = isToday ? 'bg-sky-500 shadow-md shadow-sky-500/40' : 'bg-amber-500/80';
+            barDiv.innerHTML = `
+              <div class="w-full ${colorClass} rounded-t transition-all duration-300" style="height: ${barPct}%" title="${h.date}: 铜钱 ${formatCoins(h.coins)}, 元宝 ${h.ingots}"></div>
+              <span class="text-[10px] ${isToday ? 'text-sky-400 font-bold' : 'text-slate-400'}">${isToday ? '今日' : h.date}</span>
+            `;
+            chartElem.appendChild(barDiv);
+          });
+
+          if (startElem) startElem.innerText = `初始: ${formatCoins(history[0].coins)}`;
+          if (currElem) currElem.innerText = `当前: ${formatCoins(history[history.length - 1].coins)}`;
+        }
+
+        // 2. 元宝审计日志清单
+        const logsElem = document.getElementById('auditLogsContainer');
+        if (logsElem) {
+          logsElem.innerHTML = `
+            <div class="flex items-center justify-between text-slate-400 text-[11px] pb-1 border-b border-slate-800">
+              <span class="w-24">时间</span>
+              <span class="flex-1 px-2">动作/行为</span>
+              <span class="w-16 text-center">元宝上限</span>
+              <span class="w-20 text-right">风控状态</span>
+            </div>
+          `;
+          const records = data.audit_records || [];
+          if (records.length === 0) {
+            const emptyDiv = document.createElement('div');
+            emptyDiv.className = 'text-center py-4 text-slate-500 text-xs';
+            emptyDiv.innerText = '暂无元宝扣减审计记录 (已执行全量零元宝安全白名单策略)';
+            logsElem.appendChild(emptyDiv);
+          } else {
+            records.forEach(r => {
+              const row = document.createElement('div');
+              row.className = 'flex items-center justify-between text-slate-300 py-1 border-b border-slate-900/60';
+              const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleTimeString().slice(0, 5) : '--:--';
+              row.innerHTML = `
+                <span class="w-24 text-slate-500 font-mono text-[10px]">${timeStr}</span>
+                <span class="flex-1 px-2 text-slate-200 truncate" title="${r.details || ''}">${r.action_name}</span>
+                <span class="w-16 text-center text-amber-400 font-mono">${r.allow_ingot} 元宝</span>
+                <span class="w-20 text-right ${r.allow_ingot === 0 ? 'text-emerald-400' : 'text-amber-400'} text-[11px]">${r.allow_ingot === 0 ? '零元宝拦截' : '配额允许'}</span>
+              `;
+              logsElem.appendChild(row);
+            });
+          }
+        }
+      } catch (err) {
+        console.error("加载审计记录失败:", err);
+      }
     }
 
     function closeDrawer() {

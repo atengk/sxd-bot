@@ -86,7 +86,8 @@ async def sse_event_stream(
             if limit and count >= limit:
                 return
 
-            idle_wait = max_idle_sec if max_idle_sec is not None else timeout_sec
+            effective_max_idle = max_idle_sec if max_idle_sec is not None else (2.0 if limit else None)
+            idle_wait = effective_max_idle if effective_max_idle is not None else timeout_sec
 
             # 3. 循环等待并推送事件流
             while True:
@@ -99,7 +100,7 @@ async def sse_event_stream(
                     if limit and count >= limit:
                         break
                 except asyncio.TimeoutError:
-                    if max_idle_sec is not None:
+                    if effective_max_idle is not None:
                         break
                     yield ": keepalive\n\n"
 
