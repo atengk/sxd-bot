@@ -11,6 +11,19 @@ from storage.protocol_db import (
     ProtocolDatabase,
     ProtocolRepository,
 )
+from storage.player_db import (
+    PlayerProfileRecord,
+    InventoryItemRecord,
+    ModuleStateRecord,
+    BattleRecord,
+    AuditLogRecord,
+    PlayerDatabase,
+    MAX_FIFO_RECORDS,
+)
+from storage.worker import (
+    StorageTask,
+    StorageWorker,
+)
 
 __all__ = [
     "ModuleMeta",
@@ -18,4 +31,13 @@ __all__ = [
     "ConstantMeta",
     "ProtocolDatabase",
     "ProtocolRepository",
+    "PlayerProfileRecord",
+    "InventoryItemRecord",
+    "ModuleStateRecord",
+    "BattleRecord",
+    "AuditLogRecord",
+    "PlayerDatabase",
+    "MAX_FIFO_RECORDS",
+    "StorageTask",
+    "StorageWorker",
 ]
