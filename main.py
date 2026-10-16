@@ -28,6 +28,9 @@ from core.context import GameContext
 from core.events import EventBus
 from network.client import SXDClient
 from network.web_auth import WebAuthFetcher, GatewayCredentials
+from services.query_service import QueryService
+from services.query_formatter import QueryFormatter
+from storage.player_db import PlayerDatabase
 from tasks.base import TaskResult
 from tasks.scheduler import TaskScheduler
 from tasks.routine.login import LoginTask
@@ -273,6 +276,81 @@ async def run_headless_bot(config: dict, mode: str = "once", specific_task: Opti
         logger.info("无头自动化引擎已安全优雅退出")
 
 
+async def run_query_mode(config: dict, query_target: str, as_json: bool = False) -> None:
+    """启动轻量只读数据查询与态势感知生命周期
+
+    仅完成网络握手与鉴权登录，调用 QueryService 拉取目标只读数据并格式化输出，
+    随后立即安全优雅退出，绝不执行任何日常任务或战斗流水线。
+
+    @author Ateng
+    @since 2026-10-16
+
+    Args:
+        config: 运行时配置字典。
+        query_target: 查询目标类别 ('assets', 'roles', 'assistant', 'pack', 'all')。
+        as_json: 是否输出为机器可读的标准 JSON 格式。
+    """
+    logger.info("=== 启动数据查询与态势感知模式 (目标: %s, JSON: %s) ===", query_target, as_json)
+
+    # 1. 确定鉴权与网关模式
+    auth_mode = config.get("auth_mode", "static")
+    creds: Optional[GatewayCredentials] = None
+
+    if auth_mode in ("auto", "dynamic"):
+        web_conf = config.get("web_auth", {})
+        username = web_conf.get("username", "")
+        password = web_conf.get("password", "")
+        server = web_conf.get("server", "s813")
+        if username and password:
+            logger.info("采用全自动 Web 登录流程换取新鲜令牌 (用户: %s, 区服: %s)...", username, server)
+            creds = WebAuthFetcher.auto_login(username=username, password=password, server=server)
+        else:
+            login_url = web_conf.get("login_url", "")
+            cookie = web_conf.get("cookie", "")
+            logger.info("正在通过 Web 接口获取登录凭据...")
+            creds = WebAuthFetcher.fetch_dynamic_credentials(login_url, cookie)
+
+    if creds is None:
+        logger.info("采用静态配置文件中的网关与鉴权凭据")
+        creds = WebAuthFetcher.from_config_dict(config)
+
+    # 2. 组装核心上下文与长连接客户端
+    ctx = GameContext()
+    bus = EventBus()
+    client = SXDClient(context=ctx, event_bus=bus)
+
+    connected = await client.connect(creds.server_host, creds.server_port)
+    if not connected:
+        logger.error("无法建立与游戏网关的连接，退出执行")
+        return
+
+    try:
+        # 3. 登录握手与基础角色初始化
+        login_task = LoginTask(creds)
+        login_result = await login_task.execute(client, ctx)
+        if not login_result.is_success:
+            logger.error("登录认证失败，无法继续执行查询: %s", login_result.message)
+            return
+
+        # 4. 初始化本地 SQLite 数据库与查询领域服务
+        player_db = PlayerDatabase(server_id=creds.server_id, player_id=ctx.player.player_id)
+        query_service = QueryService(client=client, context=ctx, player_db=player_db)
+
+        # 5. 执行针对性只读查询并格式化输出
+        if query_target == "assets":
+            dto = await query_service.query_player_assets()
+            if as_json:
+                print(QueryFormatter.format_assets_json(dto))
+            else:
+                print(QueryFormatter.format_assets_table(dto))
+        else:
+            logger.warning("查询目标 '%s' 暂未就绪或未识别，支持选项: ['assets', 'roles', 'assistant', 'pack', 'all']", query_target)
+
+    finally:
+        await client.disconnect()
+        logger.info("数据查询完成，长连接已安全优雅断开退出")
+
+
 def print_execution_summary(ctx: GameContext, scheduler: TaskScheduler) -> None:
     """打印美化的日常任务战报总结"""
     print("\n" + "=" * 62)
@@ -342,6 +420,17 @@ def main() -> None:
         help="指定执行任务: all, signin, money_tree, worship, lucky_star, farm, peach_pet, traders, fishing, tower, fate, take_bible, travel, item_clean, hero_mission, sweep, normal_mission, multi_mission, sport, boss, online_gift",
     )
     parser.add_argument(
+        "--query",
+        "-q",
+        choices=["assets", "roles", "assistant", "pack", "all"],
+        help="执行指定维度的只读数据查询与态势感知看板并退出 (如: assets, roles, assistant, pack, all)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="将查询结果以标准格式化 JSON 输出",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -353,8 +442,17 @@ def main() -> None:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    mode = "daemon" if args.daemon else "once"
     config = load_config(args.config)
+
+    # 若指定了 --query 模式，直接进入独立只读查询生命周期并安全退出
+    if args.query:
+        try:
+            asyncio.run(run_query_mode(config, query_target=args.query, as_json=args.json))
+        except KeyboardInterrupt:
+            logger.info("查询被用户中断")
+        return
+
+    mode = "daemon" if args.daemon else "once"
 
     try:
         asyncio.run(run_headless_bot(config, mode=mode, specific_task=args.task))
