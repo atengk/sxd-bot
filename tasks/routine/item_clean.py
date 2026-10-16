@@ -13,6 +13,7 @@ from tasks.base import BaseTask, TaskResult
 from core.context import GameContext
 from network.client import SXDClient
 from protocol.builder import PacketBuilder
+from protocol.messages.item import ItemGetPlayerPackItemListResp
 from protocol.packet import ByteArrayReader
 
 logger = logging.getLogger(__name__)
@@ -43,18 +44,18 @@ class ItemCleanTask(BaseTask):
             resp_pack = await client.request(req_pack, timeout_sec=3.0)
             logger.info("玩家背包物品列表同步成功 (响应载荷: %d 字节)", len(resp_pack))
 
-            reader = ByteArrayReader(resp_pack)
-            if reader.remaining >= 6:
-                pack_grid_size = reader.read_int16()
-                empty_grids = reader.read_int32()
-                logger.info("背包容量概况: 总格数=%d, 空余格数=%d", pack_grid_size, empty_grids)
+            resp = ItemGetPlayerPackItemListResp.decode(resp_pack)
+            pack_grid_size = resp.pack_capacity
+            pack_used = len(resp.pack_items)
+            empty_grids = max(0, pack_grid_size - pack_used) if pack_grid_size > 0 else 0
+            logger.info("背包容量概况: 总格数=%d, 已用格数=%d, 空余格数=%d", pack_grid_size, pack_used, empty_grids)
 
-                # 安全防护：仅在背包剩余空格极低 (< 3) 时进一步分析低阶杂物格并变卖
-                # 遵循零风险原则，杜绝误卖高价值资产
-                if empty_grids < 3:
-                    logger.warning("背包可用空间紧张 (剩余 %d 格)，准备执行智能杂物变卖清理", empty_grids)
-                else:
-                    logger.info("背包剩余可用空间充足 (剩余 %d 格)，处于安全裕度内", empty_grids)
+            # 安全防护：仅在背包剩余空格极低 (< 3) 时进一步分析低阶杂物格并变卖
+            # 遵循零风险原则，杜绝误卖高价值资产
+            if empty_grids < 3:
+                logger.warning("背包可用空间紧张 (剩余 %d 格)，准备执行智能杂物变卖清理", empty_grids)
+            else:
+                logger.info("背包剩余可用空间充足 (剩余 %d 格)，处于安全裕度内", empty_grids)
 
             msg = f"背包智能巡检完成: 背包格位已同步，高价值资产已受到严格安全保护 (零元宝)"
             logger.info(msg)

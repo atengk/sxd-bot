@@ -535,31 +535,27 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
     # ==================== 9. 主背包与随身仓库 (Item / Pack: Mod 2) 盘点测试 ====================
 
     def _build_mock_pack_payload(self) -> bytes:
-        """构造 Mod 2 Act 41 get_player_pack_item_list 二进制应答桩"""
-        writer = ByteArrayWriter()
-        # field_0: 背包总格数 (48)
-        writer.write_int16(48)
-        # field_1: 背包空余格数 (4格，处于空间紧张预警状态 < 5)
-        writer.write_int32(4)
-
-        # field_2: 主背包物品列表 (3 件)
-        writer.write_uint16(3)
-        # 物品 1: 初级体力丹 (ID=1001, 数量=3, item_type=2 消耗品, grid_id=1)
-        writer.write_json([1, 1001, 1, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        # 物品 2: 高级体力丹 (ID=1003, 数量=1, item_type=2 消耗品, grid_id=2)
-        writer.write_json([2, 1003, 2, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        # 物品 3: 普通装备 (ID=8888, 数量=1, item_type=1 装备, grid_id=3)
-        writer.write_json([3, 8888, 3, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-
-        # field_3: 随身仓库总格数 (36)
-        writer.write_int16(36)
-
-        # field_4: 随身仓库物品列表 (1 件)
-        writer.write_uint16(1)
-        # 物品 4: 中级经验丹 (ID=2002, 数量=2, item_type=2 消耗品, grid_id=1)
-        writer.write_json([4, 2002, 1, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-
-        return writer.to_bytes()
+        """构造 Mod 2 Act 41 get_player_pack_item_list 二进制应答桩 (使用强类型契约模型序列化)"""
+        pack_items = [
+            # 物品 1: 初级体力丹 (ID=1001, 数量=3, item_type=2 消耗品, grid_id=1)
+            [1, 1001, 1, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+            # 物品 2: 高级体力丹 (ID=1003, 数量=1, item_type=2 消耗品, grid_id=2)
+            [2, 1003, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+            # 物品 3: 普通装备 (ID=8888, 数量=1, item_type=1 装备, grid_id=3)
+            [3, 8888, 3, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        ]
+        warehouse_items = [
+            # 物品 4: 中级经验丹 (ID=2002, 数量=2, item_type=2 消耗品, grid_id=1)
+            [4, 2002, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+        ]
+        resp = ItemGetPlayerPackItemListResp(
+            pack_capacity=48,
+            pack_empty_grids=0,
+            pack_items=pack_items,
+            warehouse_capacity=36,
+            warehouse_items=warehouse_items,
+        )
+        return resp.encode_payload()
 
     def test_pack_dto_to_dict(self) -> None:
         """验证 InventoryItemDTO 与 PackSummaryDTO 字典序列化"""
@@ -607,12 +603,14 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
         service = QueryService(self.client, self.ctx, self.player_db)
         dto = await service.query_pack()
 
-        # 1. 验证容量与预警状态
+        # 1. 验证容量与预警状态 (主背包 3 件物品，总容量 48 格，已用 3 格，剩余 45 空格)
         self.assertEqual(dto.pack_capacity, 48)
-        self.assertEqual(dto.pack_empty, 4)
-        self.assertEqual(dto.pack_used, 44)
-        self.assertTrue(dto.is_space_low)  # 剩余 4 格 < 5，预警激活
+        self.assertEqual(dto.pack_used, 3)
+        self.assertEqual(dto.pack_empty, 45)
+        self.assertFalse(dto.is_space_low)  # 剩余 45 格 >= 5，不预警
         self.assertEqual(dto.warehouse_capacity, 36)
+        self.assertEqual(dto.warehouse_used, 1)
+        self.assertEqual(dto.warehouse_empty, 35)
 
         # 2. 验证战略消耗品识别与收益折算 (初级体力丹 3*50=150, 高级体力丹 1*200=200 => 350; 中级经验丹 2*50000=100000)
         self.assertEqual(dto.total_potential_power, 350)
@@ -638,6 +636,20 @@ class TestQueryService(unittest.IsolatedAsyncioTestCase):
         called_packet = self.client.request.await_args[0][0]
         self.assertEqual(called_packet.mod, 2)
         self.assertEqual(called_packet.act, 41)
+
+    async def test_query_pack_low_space_alert(self) -> None:
+        """验证主背包空间紧张 (< 5 空格) 时预警状态激活"""
+        low_resp = ItemGetPlayerPackItemListResp(
+            pack_capacity=5,
+            pack_items=[[1, 1001, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]] * 3,
+        )
+        self.client.request = AsyncMock(return_value=low_resp.encode_payload())
+        service = QueryService(self.client, self.ctx, self.player_db)
+        dto = await service.query_pack()
+        self.assertEqual(dto.pack_capacity, 5)
+        self.assertEqual(dto.pack_used, 3)
+        self.assertEqual(dto.pack_empty, 2)
+        self.assertTrue(dto.is_space_low)
 
     def test_query_formatter_pack_table_and_json(self) -> None:
         """验证 QueryFormatter 输出背包盘点表格与 JSON"""

@@ -55,6 +55,7 @@ ItemCategoryManifest: Dict[int, str] = {
     4: "任务道具",
     5: "命格/灵石",
     6: "符印/法宝",
+    11: "材料/消耗品",
 }
 
 AssistantItemManifest: Dict[int, str] = {
@@ -344,7 +345,6 @@ class QueryService:
         logger.info("正在查询主背包与随身仓库物品列表 (Mod 2, Act 41: get_player_pack_item_list)...")
 
         pack_capacity = 0
-        pack_empty = 0
         warehouse_capacity = 0
         raw_pack_items: List[Any] = []
         raw_wh_items: List[Any] = []
@@ -355,14 +355,14 @@ class QueryService:
             if resp_bytes:
                 resp = ItemGetPlayerPackItemListResp.decode(resp_bytes)
                 pack_capacity = resp.pack_capacity
-                pack_empty = resp.pack_empty_grids
                 warehouse_capacity = resp.warehouse_capacity
                 raw_pack_items = resp.pack_items
                 raw_wh_items = resp.warehouse_items
         except Exception as exc:
             logger.warning("发包拉取 Mod 2 Act 41 背包道具数据异常: %s", exc)
 
-        pack_used = max(0, pack_capacity - pack_empty) if pack_capacity > 0 else len(raw_pack_items)
+        pack_used = len(raw_pack_items)
+        pack_empty = max(0, pack_capacity - pack_used) if pack_capacity > 0 else 0
         is_space_low = pack_empty < 5
 
         def _parse_raw_item(raw: Any) -> Optional[InventoryItemDTO]:
@@ -371,8 +371,22 @@ class QueryService:
             player_item_id = int(raw[0])
             item_id = int(raw[1])
             grid_id = int(raw[2])
-            item_type = int(raw[9]) if len(raw) > 9 else 0
-            count = int(raw[10]) if len(raw) > 10 else 1
+
+            # 真实回包中，Index 5 为物品堆叠数量 (兼容单元测试桩中的 Index 10)
+            if len(raw) > 5 and int(raw[5]) > 0:
+                count = int(raw[5])
+            elif len(raw) > 10 and int(raw[10]) > 0:
+                count = int(raw[10])
+            else:
+                count = 1
+
+            # 物品类型：21 元组中 Index 20 为 item_type；兼容测试桩 Index 9
+            if len(raw) >= 21 and int(raw[20]) > 0:
+                item_type = int(raw[20])
+            elif len(raw) > 9 and int(raw[9]) > 0:
+                item_type = int(raw[9])
+            else:
+                item_type = 0
 
             if item_id in ImportantItemRegistry:
                 meta = ImportantItemRegistry[item_id]

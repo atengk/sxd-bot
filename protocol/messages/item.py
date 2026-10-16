@@ -269,6 +269,46 @@ class ItemGetPlayerPackItemListReq(BasePacket):
         return cls()
 
 
+def _read_item_record(reader: ByteArrayReader) -> List[Any]:
+    """读取 Mod 2 物品 21 字段强类型二进制记录项 (75 字节)"""
+    record: List[Any] = []
+    for _ in range(9):
+        record.append(reader.read_int32())
+    record.append(reader.read_int8())
+    record.append(reader.read_int32())
+    record.append(reader.read_int32())
+    record.append(reader.read_int8())
+    record.append(reader.read_int16())
+    record.append(reader.read_int16())
+    record.append(reader.read_int8())
+    for _ in range(3):
+        record.append(reader.read_int32())
+    record.append(reader.read_int64())
+    record.append(reader.read_int32())
+    return record
+
+
+def _write_item_record(writer: ByteArrayWriter, item: Any) -> None:
+    """写入 Mod 2 物品 21 字段强类型二进制记录项 (75 字节)"""
+    if isinstance(item, (list, tuple)):
+        vals = list(item) + [0] * max(0, 21 - len(item))
+        for i in range(9):
+            writer.write_int32(int(vals[i]))
+        writer.write_int8(int(vals[9]))
+        writer.write_int32(int(vals[10]))
+        writer.write_int32(int(vals[11]))
+        writer.write_int8(int(vals[12]))
+        writer.write_int16(int(vals[13]))
+        writer.write_int16(int(vals[14]))
+        writer.write_int8(int(vals[15]))
+        for i in range(16, 19):
+            writer.write_int32(int(vals[i]))
+        writer.write_int64(int(vals[19]))
+        writer.write_int32(int(vals[20]))
+    else:
+        writer.write_json(item)
+
+
 @dataclass
 class ItemGetPlayerPackItemListResp(BasePacket):
     """玩家主背包与随身仓库物品列表应答 (Mod 2, Act 41) - [SAFE_READ]
@@ -307,11 +347,11 @@ class ItemGetPlayerPackItemListResp(BasePacket):
         writer.write_int32(self.pack_empty_grids)
         writer.write_uint16(len(self.pack_items))
         for item in self.pack_items:
-            writer.write_json(item)
+            _write_item_record(writer, item)
         writer.write_int16(self.warehouse_capacity)
         writer.write_uint16(len(self.warehouse_items))
         for item in self.warehouse_items:
-            writer.write_json(item)
+            _write_item_record(writer, item)
         return writer.to_bytes()
 
     @classmethod
@@ -331,17 +371,29 @@ class ItemGetPlayerPackItemListResp(BasePacket):
             if reader.remaining >= 2:
                 cnt_pack = reader.read_uint16()
                 for _ in range(cnt_pack):
-                    if reader.remaining == 0:
+                    if reader.remaining >= 75:
+                        pack_items.append(_read_item_record(reader))
+                    elif reader.remaining > 0:
+                        try:
+                            pack_items.append(reader.read_json())
+                        except Exception:
+                            break
+                    else:
                         break
-                    pack_items.append(reader.read_json())
             if reader.remaining >= 2:
                 wh_cap = reader.read_int16()
             if reader.remaining >= 2:
                 cnt_wh = reader.read_uint16()
                 for _ in range(cnt_wh):
-                    if reader.remaining == 0:
+                    if reader.remaining >= 75:
+                        wh_items.append(_read_item_record(reader))
+                    elif reader.remaining > 0:
+                        try:
+                            wh_items.append(reader.read_json())
+                        except Exception:
+                            break
+                    else:
                         break
-                    wh_items.append(reader.read_json())
         except Exception:
             pass
 
