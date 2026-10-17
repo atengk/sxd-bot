@@ -1,0 +1,159 @@
+{
+  "_meta": {
+    "description": "神仙道世界问答本地题库 (World Answer Bank)",
+    "version": "1.0",
+    "updated_at": "2026-10-17"
+  },
+  "questions": [
+    {
+      "question": "孙悟空的大师傅是谁？",
+      "keywords": ["孙悟空", "大师傅"],
+      "answer": "菩提祖师",
+      "length": 4
+    },
+    {
+      "question": "白龙马原来是哪里的三太子？",
+      "keywords": ["白龙马", "三太子"],
+      "answer": "西海",
+      "length": 2
+    },
+    {
+      "question": "唐僧的大徒弟是谁？",
+      "keywords": ["唐僧", "大徒弟"],
+      "answer": "孙悟空",
+      "length": 3
+    },
+    {
+      "question": "猪八戒在天庭的官职是什么？",
+      "keywords": ["猪八戒", "天庭", "官职"],
+      "answer": "天蓬元帅",
+      "length": 4
+    },
+    {
+      "question": "沙和尚在天庭的官职是什么？",
+      "keywords": ["沙和尚", "天庭", "官职"],
+      "answer": "卷帘大将",
+      "length": 4
+    },
+    {
+      "question": "孙悟空被如来佛祖压在什么山下？",
+      "keywords": ["孙悟空", "如来", "佛祖", "压在", "山下"],
+      "answer": "五指山",
+      "length": 3
+    },
+    {
+      "question": "红孩儿的父亲是谁？",
+      "keywords": ["红孩儿", "父亲"],
+      "answer": "牛魔王",
+      "length": 3
+    },
+    {
+      "question": "红孩儿的母亲是谁？",
+      "keywords": ["红孩儿", "母亲"],
+      "answer": "铁扇公主",
+      "length": 4
+    },
+    {
+      "question": "二郎神身边的那条神犬叫什么？",
+      "keywords": ["二郎神", "神犬", "狗"],
+      "answer": "哮天犬",
+      "length": 3
+    },
+    {
+      "question": "哪吒的父亲是谁？",
+      "keywords": ["哪吒", "父亲"],
+      "answer": "李靖",
+      "length": 2
+    },
+    {
+      "question": "金箍棒的原名叫什么？",
+      "keywords": ["金箍棒", "原名"],
+      "answer": "如意金箍棒",
+      "length": 5
+    },
+    {
+      "question": "白素贞的丈夫是谁？",
+      "keywords": ["白素贞", "丈夫"],
+      "answer": "许仙",
+      "length": 2
+    },
+    {
+      "question": "水浒传中倒拔垂杨柳的好汉是谁？",
+      "keywords": ["水浒传", "倒拔垂杨柳"],
+      "answer": "鲁智深",
+      "length": 3
+    },
+    {
+      "question": "三国演义中草船借箭的是谁？",
+      "keywords": ["三国演义", "草船借箭"],
+      "answer": "诸葛亮",
+      "length": 3
+    },
+    {
+      "question": "神雕侠侣中小龙女的丈夫是谁？",
+      "keywords": ["神雕侠侣", "小龙女", "丈夫"],
+      "answer": "杨过",
+      "length": 2
+    },
+    {
+      "question": "神仙道中最高品质的命格颜色是什么？",
+      "keywords": ["命格", "最高品质", "颜色"],
+      "answer": "金色",
+      "length": 2
+    },
+    {
+      "question": "神仙道中招财神符每日第1次消耗多少元宝？",
+      "keywords": ["招财神符", "第1次", "元宝"],
+      "answer": "0",
+      "length": 1
+    },
+    {
+      "question": "帮派祭神使用白檀香可以获得多少声望？",
+      "keywords": ["帮派祭神", "白檀香", "声望"],
+      "answer": "100",
+      "length": 3
+    },
+    {
+      "question": "神仙道中西天取经品质最高的使徒是谁？",
+      "keywords": ["西天取经", "品质最高", "使徒"],
+      "answer": "唐僧",
+      "length": 2
+    },
+    {
+      "question": "帮派七星封魔活动最多几人组队？",
+      "keywords": ["七星封魔", "最多", "组队"],
+      "answer": "4",
+      "length": 1
+    },
+    {
+      "question": "仙履奇缘中答题可以获得哪种重要资源？",
+      "keywords": ["仙履奇缘", "答题", "资源"],
+      "answer": "体力",
+      "length": 2
+    },
+    {
+      "question": "吉星高照每天可以免费掷几次骰子？",
+      "keywords": ["吉星高照", "免费", "骰子"],
+      "answer": "10",
+      "length": 2
+    },
+    {
+      "question": "猎命中能够遇到姜子牙的前一位NPC是谁？",
+      "keywords": ["猎命", "姜子牙", "前一位"],
+      "answer": "张道陵",
+      "length": 3
+    },
+    {
+      "question": "主角多少级开启封灵系统？",
+      "keywords": ["主角", "封灵", "等级"],
+      "answer": "70",
+      "length": 2
+    },
+    {
+      "question": "神仙道中药园种植可以获得铜钱和什么？",
+      "keywords": ["药园", "种植", "获得"],
+      "answer": "经验",
+      "length": 2
+    }
+  ]
+}

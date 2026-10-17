@@ -70,6 +70,7 @@ from tasks.routine.link_fate import LinkFateTask
 from tasks.routine.home import HomeTask
 from tasks.routine.union_worship import UnionWorshipTask
 from tasks.routine.memory_zone import MemoryZoneTask
+from tasks.routine.world_answer import WorldAnswerTask
 
 
 # 配置标准受管日志
@@ -204,6 +205,9 @@ async def run_headless_bot_single_account(
         "worship_union": UnionWorshipTask(),
         "memory_zone": MemoryZoneTask(),
         "memory": MemoryZoneTask(),
+        "world_answer": WorldAnswerTask(),
+        "answer": WorldAnswerTask(),
+        "quiz": WorldAnswerTask(),
     }
 
     if specific_task and specific_task != "all":
