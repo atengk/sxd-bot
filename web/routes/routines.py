@@ -34,6 +34,17 @@ class RoutineConfigUpdateReq(BaseModel):
 
     allowed_ingots: Optional[int] = Field(default=0, ge=0, description="允许消耗的元宝上限")
     enabled_routines: List[str] = Field(default_factory=list, description="启用的日常子任务名称列表")
+    farm_plant_type: Optional[str] = Field(default="auto", description="药园种植首选类型：auto / exp_only / coin_only")
+
+
+class FarmConfigUpdateReq(BaseModel):
+    """药园专属种植配置请求
+
+    @author Ateng
+    @since 2026-10-17
+    """
+
+    plant_type: str = Field(default="auto", description="药园种植首选类型：auto(自适应) / exp_only(仅经验树) / coin_only(仅发财树)")
 
 
 class RoutineTriggerReq(BaseModel):
@@ -63,6 +74,7 @@ async def get_routine_config(alias: str, request: Request) -> Dict[str, Any]:
         "alias": cfg.alias,
         "allowed_ingots": cfg.allowed_ingots,
         "enabled_routines": cfg.enabled_routines,
+        "farm_plant_type": getattr(cfg, "farm_plant_type", "auto"),
         "all_routines": list(ALL_ROUTINES),
         "updated_at": cfg.updated_at,
     }
@@ -83,10 +95,12 @@ async def update_routine_config(
             detail=f"账号 '{alias}' 不存在",
         )
 
+    plant_type = req.farm_plant_type if req.farm_plant_type in ("auto", "exp_only", "coin_only") else "auto"
     record = RoutineConfigRecord(
         alias=alias,
         allowed_ingots=req.allowed_ingots if req.allowed_ingots is not None else 0,
         enabled_routines=req.enabled_routines,
+        farm_plant_type=plant_type,
     )
 
     success = db.save_routine_config(record)
@@ -101,7 +115,61 @@ async def update_routine_config(
         "alias": alias,
         "allowed_ingots": record.allowed_ingots,
         "enabled_count": len(record.enabled_routines),
+        "farm_plant_type": record.farm_plant_type,
         "updated_at": record.updated_at,
+    }
+
+
+@router.get("/{alias}/farm/config", response_model=Dict[str, Any])
+async def get_farm_config(alias: str, request: Request) -> Dict[str, Any]:
+    """获取指定账号的药园种植配置 (经验树/发财树)"""
+    db: ConfigDatabase = request.app.state.db
+    acc = db.get_account(alias)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"账号 '{alias}' 不存在",
+        )
+    cfg = db.get_routine_config(alias)
+    return {
+        "alias": alias,
+        "farm_plant_type": getattr(cfg, "farm_plant_type", "auto"),
+        "options": ["auto", "exp_only", "coin_only"],
+    }
+
+
+@router.put("/{alias}/farm/config", response_model=Dict[str, Any])
+async def update_farm_config(
+    alias: str,
+    req: FarmConfigUpdateReq,
+    request: Request,
+) -> Dict[str, Any]:
+    """更新指定账号的药园种植偏好 (auto / exp_only / coin_only)"""
+    db: ConfigDatabase = request.app.state.db
+    acc = db.get_account(alias)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"账号 '{alias}' 不存在",
+        )
+    if req.plant_type not in ("auto", "exp_only", "coin_only"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="plant_type 必须为 'auto'、'exp_only' 或 'coin_only'",
+        )
+
+    cfg = db.get_routine_config(alias)
+    cfg.farm_plant_type = req.plant_type
+    success = db.save_routine_config(cfg)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="保存药园配置失败",
+        )
+    return {
+        "success": True,
+        "alias": alias,
+        "farm_plant_type": cfg.farm_plant_type,
     }
 
 
@@ -136,3 +204,4 @@ async def trigger_routine(
         force=force,
     )
     return result
+

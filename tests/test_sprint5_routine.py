@@ -112,20 +112,80 @@ class TestSprint5Routine(unittest.IsolatedAsyncioTestCase):
     # ==================== 3. 猎妖 (Mod 105) ====================
 
     async def test_hunt_demon_full_pipeline(self) -> None:
-        """测试每日 10 次免费猎妖全额击杀"""
+        """测试免费猎妖 (2次) + 铜钱猎妖 (3次) 双轨全额猎捕"""
         task = HuntDemonTask()
-        # open_hunt_demon: type=3, free=2, max=10
-        open_resp = bytes([3, 2, 10, 0, 15]) + b"\x00" * 12
+        # open_hunt_demon: free=2, coin=3, ingot=10, need_ingot=15 (0x000F)
+        open_resp = bytes([2, 3, 10, 0, 15]) + b"\x00" * 12
         # hunt_demon: status=5 (SUCCESS)
         hunt_resp = bytes([5]) + b"\x00" * 28
         self.client.request = AsyncMock(side_effect=[
             open_resp,
-            hunt_resp,
-            hunt_resp,
+            hunt_resp,  # free hunt #1 (type=0)
+            hunt_resp,  # free hunt #2 (type=0)
+            hunt_resp,  # coin hunt #1 (type=1)
+            hunt_resp,  # coin hunt #2 (type=1)
+            hunt_resp,  # coin hunt #3 (type=1)
         ])
         result = await task.execute(self.client, self.ctx)
         self.assertEqual(result.status, TaskStatus.SUCCESS)
-        self.assertEqual(result.data["hunts_done"], 2)
+        self.assertEqual(result.data["total_hunts"], 5)
+        self.assertEqual(result.data["hunts_done"], 5)
+        self.assertEqual(result.data["free_hunts_done"], 2)
+        self.assertEqual(result.data["coin_hunts_done"], 3)
+        self.assertEqual(result.data["free_times_left"], 0)
+        self.assertEqual(result.data["coin_times_left"], 0)
+
+    async def test_hunt_demon_all_exhausted(self) -> None:
+        """测试免费与铜钱猎妖次数均已耗尽时的零元宝安全熔断"""
+        task = HuntDemonTask()
+        # open_hunt_demon: free=0, coin=0, ingot=10, need_ingot=15
+        open_resp = bytes([0, 0, 10, 0, 15]) + b"\x00" * 12
+        self.client.request = AsyncMock(return_value=open_resp)
+        result = await task.execute(self.client, self.ctx)
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertEqual(result.data["total_hunts"], 0)
+        self.assertEqual(result.data["free_hunts_done"], 0)
+        self.assertEqual(result.data["coin_hunts_done"], 0)
+
+    async def test_hunt_demon_low_coins_skips_coin_hunt(self) -> None:
+        """测试铜钱低于安全底线 (50万) 时安全跳过铜钱猎妖防破产"""
+        task = HuntDemonTask()
+        self.ctx.player.coins = 200_000  # 低于 500,000 阈值
+        # open_hunt_demon: free=1, coin=5, ingot=10, need_ingot=15
+        open_resp = bytes([1, 5, 10, 0, 15]) + b"\x00" * 12
+        hunt_resp = bytes([5]) + b"\x00" * 28
+        self.client.request = AsyncMock(side_effect=[
+            open_resp,
+            hunt_resp,  # 仅执行 1 次免费猎妖，跳过铜钱猎妖
+        ])
+        result = await task.execute(self.client, self.ctx)
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertEqual(result.data["free_hunts_done"], 1)
+        self.assertEqual(result.data["coin_hunts_done"], 0)
+        self.assertEqual(result.data["total_hunts"], 1)
+
+    async def test_hunt_demon_pack_full_fuse(self) -> None:
+        """测试背包满 (PACK_FULL=6) 时安全立即中止猎妖流水线"""
+        task = HuntDemonTask()
+        # open_hunt_demon: free=2, coin=5, ingot=10, need_ingot=15
+        open_resp = bytes([2, 5, 10, 0, 15]) + b"\x00" * 12
+        pack_full_resp = bytes([6]) + b"\x00" * 28  # PACK_FULL
+        self.client.request = AsyncMock(side_effect=[
+            open_resp,
+            pack_full_resp,
+        ])
+        result = await task.execute(self.client, self.ctx)
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertTrue(result.data["pack_full"])
+        self.assertEqual(result.data["total_hunts"], 0)
+
+    async def test_hunt_demon_level_below_80_skipped(self) -> None:
+        """测试等级低于80级时安全跳过猎妖任务"""
+        task = HuntDemonTask()
+        self.ctx.player.level = 75
+        result = await task.execute(self.client, self.ctx)
+        self.assertEqual(result.status, TaskStatus.SKIPPED)
+        self.assertEqual(result.data["total_hunts"], 0)
 
     # ==================== 4. 五行 (Mod 168) ====================
 
@@ -140,29 +200,69 @@ class TestSprint5Routine(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.data["cleaned"])
         self.assertEqual(result.data["equip_count"], 5)
 
-    # ==================== 5. 五福临门 (Mod 400) ====================
+    # ==================== 5. 五福临门 (Mod 68) ====================
 
-    async def test_five_fu_inactive(self) -> None:
-        """测试五福临门非活动期静默跳过"""
+    async def test_five_fu_not_open(self) -> None:
+        """测试五福临门功能未开启时安全静默跳过"""
         task = FiveFuTask()
-        self.client.request = AsyncMock(return_value=bytes([2]))  # 2 = NOACTIVITY
+        self.client.request = AsyncMock(return_value=bytes([13]))  # 13 = NO
         result = await task.execute(self.client, self.ctx)
         self.assertEqual(result.status, TaskStatus.SKIPPED)
         self.assertFalse(result.data["active"])
 
-    async def test_five_fu_active_compose(self) -> None:
-        """测试五福临门活动期开福袋与合成"""
+    async def test_five_fu_bless_success(self) -> None:
+        """测试五福临门完成 1 轮免费祈福与收官领奖流水线"""
         task = FiveFuTask()
+        # 1. is_five_blessings_open -> YES=12
+        resp_open_probe = bytes([12])
+        # 2. open_five_blessings -> bless_number=1, stage=0, dummy padding
+        resp_panel = (1).to_bytes(2, "big") + bytes([0]) + b"\x00" * 30
+        # 3. start_bless -> SUCCESS=0
+        resp_start = bytes([0]) + b"\x00" * 20
+        # 4. end_bless -> SUCCESS=0
+        resp_end = bytes([0]) + b"\x00" * 10
+
         self.client.request = AsyncMock(side_effect=[
-            bytes([0]),  # open_pack SUCCESS
-            bytes([0]),  # compose_fu SUCCESS
+            resp_open_probe,
+            resp_panel,
+            resp_start,
+            resp_end,
         ])
-        self.client.send_packet = AsyncMock()
         result = await task.execute(self.client, self.ctx)
         self.assertEqual(result.status, TaskStatus.SUCCESS)
         self.assertTrue(result.data["active"])
-        self.assertTrue(result.data["opened"])
-        self.assertTrue(result.data["composed"])
+        self.assertEqual(result.data["rounds_done"], 1)
+        self.assertFalse(result.data["claimed_pending"])
+
+    async def test_five_fu_already_exhausted(self) -> None:
+        """测试五福临门今日免费次数已用尽 (bless_number=0)"""
+        task = FiveFuTask()
+        resp_open_probe = bytes([12])
+        resp_panel = (0).to_bytes(2, "big") + bytes([0]) + b"\x00" * 30
+        self.client.request = AsyncMock(side_effect=[
+            resp_open_probe,
+            resp_panel,
+        ])
+        result = await task.execute(self.client, self.ctx)
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertEqual(result.data["rounds_done"], 0)
+
+    async def test_five_fu_claim_pending_stage(self) -> None:
+        """测试五福临门自动结算并领取上一轮遗留奖励 (stage > 0)"""
+        task = FiveFuTask()
+        resp_open_probe = bytes([12])
+        # bless_number=0, stage=2 (有未领奖励)
+        resp_panel = (0).to_bytes(2, "big") + bytes([2]) + b"\x00" * 30
+        resp_claim = bytes([0])
+        self.client.request = AsyncMock(side_effect=[
+            resp_open_probe,
+            resp_panel,
+            resp_claim,
+        ])
+        result = await task.execute(self.client, self.ctx)
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertTrue(result.data["claimed_pending"])
+        self.assertEqual(result.data["rounds_done"], 0)
 
     # ==================== 6. 聚灵 (Mod 104) ====================
 

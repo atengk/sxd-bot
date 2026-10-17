@@ -78,6 +78,7 @@ class TestWebRoutinesAndSSE(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data["alias"], "主号")
         self.assertEqual(data["allowed_ingots"], 0)
+        self.assertEqual(data["farm_plant_type"], "auto")
         self.assertEqual(len(data["enabled_routines"]), len(ALL_ROUTINES))
         self.assertEqual(len(data["all_routines"]), len(ALL_ROUTINES))
         self.assertIn("money_tree", data["enabled_routines"])
@@ -93,22 +94,48 @@ class TestWebRoutinesAndSSE(unittest.TestCase):
         payload = {
             "allowed_ingots": 100,
             "enabled_routines": ["signin", "money_tree", "farm"],
+            "farm_plant_type": "coin_only",
         }
         resp = self.client.put("/api/accounts/主号/routine-config", json=payload)
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json().get("success"))
         self.assertEqual(resp.json().get("allowed_ingots"), 100)
         self.assertEqual(resp.json().get("enabled_count"), 3)
+        self.assertEqual(resp.json().get("farm_plant_type"), "coin_only")
 
         # 数据库再读验证
         db_cfg = self.db.get_routine_config("主号")
         self.assertEqual(db_cfg.allowed_ingots, 100)
         self.assertEqual(db_cfg.enabled_routines, ["signin", "money_tree", "farm"])
+        self.assertEqual(db_cfg.farm_plant_type, "coin_only")
 
         # GET 接口回读验证
         get_resp = self.client.get("/api/accounts/主号/routine-config")
         self.assertEqual(get_resp.status_code, 200)
         self.assertEqual(get_resp.json()["enabled_routines"], ["signin", "money_tree", "farm"])
+        self.assertEqual(get_resp.json()["farm_plant_type"], "coin_only")
+
+    def test_farm_config_dedicated_endpoints(self) -> None:
+        """测试药园专属配置查询与更新接口 (GET/PUT /api/accounts/{alias}/farm/config)"""
+        # 1. 默认查询
+        resp = self.client.get("/api/accounts/主号/farm/config")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["farm_plant_type"], "auto")
+
+        # 2. 定制更新为 exp_only
+        put_resp = self.client.put("/api/accounts/主号/farm/config", json={"plant_type": "exp_only"})
+        self.assertEqual(put_resp.status_code, 200)
+        self.assertTrue(put_resp.json()["success"])
+        self.assertEqual(put_resp.json()["farm_plant_type"], "exp_only")
+
+        # 3. 回读验证
+        get2_resp = self.client.get("/api/accounts/主号/farm/config")
+        self.assertEqual(get2_resp.status_code, 200)
+        self.assertEqual(get2_resp.json()["farm_plant_type"], "exp_only")
+
+        # 4. 非法参数校验拦截
+        err_resp = self.client.put("/api/accounts/主号/farm/config", json={"plant_type": "invalid_type"})
+        self.assertEqual(err_resp.status_code, 400)
 
     def test_update_routine_config_not_found(self) -> None:
         """测试更新不存在账号日常配置返回 404"""

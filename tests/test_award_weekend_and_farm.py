@@ -205,7 +205,8 @@ class TestAwardWeekendAndFarm(unittest.IsolatedAsyncioTestCase):
         result = await task.execute(self.client, self.ctx)
         self.assertEqual(result.status, TaskStatus.SUCCESS)
         self.assertEqual(result.data["harvested_count"], 1)
-        self.assertEqual(result.data["planted_count"], 1)
+        # 地块 1 收获后变为空闲，与原空地 2 一并即时补种 (planted_count=2)
+        self.assertEqual(result.data["planted_count"], 2)
         self.assertEqual(result.data["fairy_tree_count"], 2)
         self.assertTrue(result.data["xianling_claimed"])
 
@@ -214,3 +215,136 @@ class TestAwardWeekendAndFarm(unittest.IsolatedAsyncioTestCase):
         self.assertIn((13, 5), actions_recorded)   # plant
         self.assertIn((135, 3), actions_recorded)  # fairy tree coin
         self.assertIn((135, 4), actions_recorded)  # fairy tree expr
+
+    async def test_farm_coin_tree_auto_fallback_when_max_level(self) -> None:
+        """测试【药园智能自适应】当伙伴全员满级时，自动从经验树切为发财树 (herbs_type=3)"""
+        task = FarmTask(plant_type="auto")
+
+        # 1 块空闲土地 (lid=1)
+        w_c = ByteArrayWriter()
+        w_c.write_uint16(1)
+        w_c.write_int32(1).write_int32(0).write_utf("").write_utf("")
+        w_c.write_int32(0).write_int64(0).write_int64(0).write_int32(0).write_int32(0).write_int32(0)
+        w_c.write_uint8(0).write_uint8(1).write_int8(0)
+        # 尾部: dew_count=0, max_lands=1
+        w_c.write_int32(0).write_int32(1)
+        lands_payload = w_c.to_bytes()
+
+        # 伙伴列表：全部已达主角 300 级 (无待培养伙伴)
+        w_r = ByteArrayWriter()
+        w_r.write_uint16(2)
+        w_r.write_int32(2001).write_utf("魔莫邪").write_utf("剑灵").write_int32(300)
+        w_r.write_bytes(b"\x00" * 29)
+        w_r.write_int32(2002).write_utf("后羿").write_utf("飞羽").write_int32(300)
+        w_r.write_bytes(b"\x00" * 29)
+        roles_payload = w_r.to_bytes()
+
+        planted_packets = []
+
+        async def mock_req(packet, timeout_sec=2.0):
+            if packet.mod == 13 and packet.act == 0:
+                return lands_payload
+            if packet.mod == 13 and packet.act == 1:
+                return roles_payload
+            if packet.mod == 13 and packet.act == 5:
+                from protocol.packet import ByteArrayReader
+                r = ByteArrayReader(packet.payload)
+                lid = r.read_int32()
+                rid = r.read_int32()
+                htype = r.read_uint8()
+                is_double = r.read_int8()
+                planted_packets.append((lid, rid, htype, is_double))
+                return bytes([8])
+            return b""
+
+        self.client.request = AsyncMock(side_effect=mock_req)
+        result = await task.execute(self.client, self.ctx)
+
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertEqual(result.data["planted_count"], 1)
+        self.assertIn("发财树", result.data["plant_type_desc"])
+        self.assertEqual(len(planted_packets), 1)
+        # 验证发财树: htype=3 (COIN_HERBS), rid=4 (ctx.player_id), is_double=0
+        self.assertEqual(planted_packets[0], (1, 4, 3, 0))
+
+    async def test_farm_dew_upgrade_lands_min_level_first(self) -> None:
+        """测试【仙露升级土地】按最低等级优先升级且严格遵循零元宝预检与熔断"""
+        task = FarmTask()
+
+        # 3 块土地: #1 等级 1, #2 等级 0, #3 等级 0; 仙露存量 = 2
+        w_c = ByteArrayWriter()
+        w_c.write_uint16(3)
+        # 土地 1: level=1, 已播种待长
+        w_c.write_int32(1).write_int32(101).write_utf("").write_utf("")
+        w_c.write_int32(2).write_int64(0).write_int64(0).write_int32(999).write_int32(0).write_int32(0)
+        w_c.write_uint8(1).write_uint8(1).write_int8(0)
+        # 土地 2: level=0, 已播种待长
+        w_c.write_int32(2).write_int32(101).write_utf("").write_utf("")
+        w_c.write_int32(2).write_int64(0).write_int64(0).write_int32(999).write_int32(0).write_int32(0)
+        w_c.write_uint8(1).write_uint8(0).write_int8(0)
+        # 土地 3: level=0, 已播种待长
+        w_c.write_int32(3).write_int32(101).write_utf("").write_utf("")
+        w_c.write_int32(2).write_int64(0).write_int64(0).write_int32(999).write_int32(0).write_int32(0)
+        w_c.write_uint8(1).write_uint8(0).write_int8(0)
+        # 尾部: dew_count=2
+        w_c.write_int32(2).write_int32(3)
+        lands_payload = w_c.to_bytes()
+
+        upgraded_lands = []
+
+        async def mock_req(packet, timeout_sec=2.0):
+            if packet.mod == 13 and packet.act == 0:
+                return lands_payload
+            if packet.mod == 13 and packet.act == 15:  # ingot_for_farmland
+                # 需 0 元宝
+                return (0).to_bytes(4, "big")
+            if packet.mod == 13 and packet.act == 16:  # up_farmland_level
+                from protocol.packet import ByteArrayReader
+                r = ByteArrayReader(packet.payload)
+                lid = r.read_int32()
+                upgraded_lands.append(lid)
+                return bytes([8])  # SUCCESS
+            return b""
+
+        self.client.request = AsyncMock(side_effect=mock_req)
+        result = await task.execute(self.client, self.ctx)
+
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertEqual(result.data["upgraded_lands_count"], 2)
+        # 仙露有 2 滴，优先升 0 级的土地 #2 和 #3，绝不优先升 1 级的土地 #1
+        self.assertEqual(upgraded_lands, [2, 3])
+
+    async def test_farm_dew_upgrade_zero_ingot_circuit_breaker(self) -> None:
+        """测试【仙露升级土地】当预检需要消耗元宝时，立即触发熔断绝不扣除元宝"""
+        task = FarmTask()
+
+        w_c = ByteArrayWriter()
+        w_c.write_uint16(1)
+        w_c.write_int32(1).write_int32(0).write_utf("").write_utf("")
+        w_c.write_int32(0).write_int64(0).write_int64(0).write_int32(0).write_int32(0).write_int32(0)
+        w_c.write_uint8(0).write_uint8(0).write_int8(0)
+        w_c.write_int32(1).write_int32(1)  # dew=1
+        lands_payload = w_c.to_bytes()
+
+        actions_sent = []
+
+        async def mock_req(packet, timeout_sec=2.0):
+            actions_sent.append((packet.mod, packet.act))
+            if packet.mod == 13 and packet.act == 0:
+                return lands_payload
+            if packet.mod == 13 and packet.act == 15:
+                # 返回需要消耗 100 元宝
+                return (100).to_bytes(4, "big")
+            if packet.mod == 13 and packet.act == 1:
+                return (0).to_bytes(2, "big")
+            if packet.mod == 13 and packet.act == 5:
+                return bytes([8])
+            return b""
+
+        self.client.request = AsyncMock(side_effect=mock_req)
+        result = await task.execute(self.client, self.ctx)
+
+        self.assertEqual(result.status, TaskStatus.SUCCESS)
+        self.assertEqual(result.data["upgraded_lands_count"], 0)
+        # 验证因为元宝 > 0，坚决未下发 Act 16 (up_farmland_level)
+        self.assertNotIn((13, 16), actions_sent)

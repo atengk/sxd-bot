@@ -460,7 +460,8 @@ class AccountSessionManager:
             try:
                 # 1. 仙府药园收获与补种 (Mod 13)
                 from tasks.routine.farm import FarmTask
-                await FarmTask().execute(client, ctx)
+                r_cfg = self.db.get_routine_config(alias)
+                await FarmTask(plant_type=getattr(r_cfg, "farm_plant_type", "auto")).execute(client, ctx)
 
                 # 2. 果园：齐天大圣摘仙桃与果园仙树 (Mod 40)
                 from tasks.routine.peach_pet import PeachAndPetTask
@@ -1153,6 +1154,8 @@ class AccountSessionManager:
                         builder = ROUTINE_TASK_BUILDERS.get(r)
                         if builder:
                             task_instance = builder()
+                            if r == "farm":
+                                task_instance.plant_type = getattr(cfg, "farm_plant_type", "auto")
                             res = await task_instance.execute(client, ctx)
                             step_status = "success" if res.is_success else "failed"
                             step_msg = f"子任务 [{r}] 执行{'成功' if res.is_success else '未完成'}: {res.message or '完成'}"

@@ -115,6 +115,7 @@ class RoutineConfigRecord:
     alias: str
     allowed_ingots: int = 0
     enabled_routines: List[str] = field(default_factory=lambda: list(ALL_ROUTINES))
+    farm_plant_type: str = "auto"  # "auto" | "exp_only" | "coin_only"
     updated_at: float = field(default_factory=time.time)
 
 
@@ -211,6 +212,7 @@ class ConfigDatabase:
                     alias TEXT PRIMARY KEY,
                     allowed_ingots INTEGER NOT NULL DEFAULT 0,
                     enabled_routines_json TEXT NOT NULL DEFAULT '[]',
+                    farm_plant_type TEXT NOT NULL DEFAULT 'auto',
                     updated_at REAL NOT NULL,
                     FOREIGN KEY (alias) REFERENCES tb_accounts(alias) ON DELETE CASCADE
                 );
@@ -224,6 +226,10 @@ class ConfigDatabase:
             )
             try:
                 conn.execute("ALTER TABLE tb_accounts ADD COLUMN player_id INTEGER NOT NULL DEFAULT 0;")
+            except sqlite3.OperationalError:
+                pass
+            try:
+                conn.execute("ALTER TABLE tb_routine_configs ADD COLUMN farm_plant_type TEXT NOT NULL DEFAULT 'auto';")
             except sqlite3.OperationalError:
                 pass
             try:
@@ -611,6 +617,7 @@ class ConfigDatabase:
                     alias=alias,
                     allowed_ingots=0,
                     enabled_routines=list(ALL_ROUTINES),
+                    farm_plant_type="auto",
                 )
 
             try:
@@ -618,10 +625,18 @@ class ConfigDatabase:
             except Exception:
                 routines = list(ALL_ROUTINES)
 
+            farm_plant_type = "auto"
+            try:
+                if "farm_plant_type" in row.keys() and row["farm_plant_type"]:
+                    farm_plant_type = str(row["farm_plant_type"])
+            except Exception:
+                pass
+
             return RoutineConfigRecord(
                 alias=row["alias"],
                 allowed_ingots=row["allowed_ingots"],
                 enabled_routines=routines,
+                farm_plant_type=farm_plant_type,
                 updated_at=row["updated_at"],
             )
 
@@ -640,17 +655,19 @@ class ConfigDatabase:
             cursor.execute(
                 """
                 INSERT INTO tb_routine_configs (
-                    alias, allowed_ingots, enabled_routines_json, updated_at
-                ) VALUES (?, ?, ?, ?)
+                    alias, allowed_ingots, enabled_routines_json, farm_plant_type, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(alias) DO UPDATE SET
                     allowed_ingots = excluded.allowed_ingots,
                     enabled_routines_json = excluded.enabled_routines_json,
+                    farm_plant_type = excluded.farm_plant_type,
                     updated_at = excluded.updated_at;
                 """,
                 (
                     config.alias,
                     config.allowed_ingots,
                     json.dumps(config.enabled_routines, ensure_ascii=False),
+                    config.farm_plant_type or "auto",
                     now,
                 ),
             )

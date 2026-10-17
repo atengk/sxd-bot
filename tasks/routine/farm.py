@@ -13,7 +13,7 @@
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from tasks.base import BaseTask, TaskResult
 from core.context import GameContext
 from network.client import SXDClient
@@ -36,6 +36,10 @@ class FarmTask(BaseTask):
     # 默认保底种植的仙草种子 ID (169: 经验草, 175: 铜钱草)
     DEFAULT_SEED_ID = 169
 
+    def __init__(self, plant_type: Optional[str] = None) -> None:
+        super().__init__()
+        self.plant_type = plant_type
+
     async def execute(self, client: SXDClient, ctx: GameContext) -> TaskResult:
         """执行我的药园与果园全域自动化流水线"""
         logger.info("开始执行仙府药园与果园全域作物巡检、收获、播种与采摘流水线...")
@@ -43,12 +47,15 @@ class FarmTask(BaseTask):
         if not ctx.is_connected:
             return TaskResult.skipped("未处于网络连接状态，跳过药园任务")
 
+        effective_plant_type = self.plant_type or ctx.extra_props.get("farm_plant_type", "auto")
         harvested_count = 0
         planted_count = 0
+        upgraded_lands_count = 0
+        plant_type_desc = "经验树"
         xianling_claimed = False
         fairy_tree_count = 0
 
-        # // 1. 经典药园土地巡检、伙伴匹配与播种收获 (Mod 13, Act 0 / Act 1 / Act 5 / Act 6)
+        # // 1. 经典药园土地巡检、仙露升级与智能补种 (Mod 13, Act 0 / Act 1 / Act 5 / Act 6 / Act 15 / Act 16)
         try:
             req_c_lands = PacketBuilder(mod=13, act=0).build()
             resp_c_lands = await client.request(req_c_lands, timeout_sec=2.5)
@@ -78,42 +85,73 @@ class FarmTask(BaseTask):
                         "player_role_id": rid,
                         "is_plant": is_plant,
                         "grow_time": grow_time,
+                        "level": level,
                     })
 
-                if c_lands:
-                    logger.info("已同步经典药园土地: 共 %d 块", len(c_lands))
-                    # 查询待培养伙伴角色列表 (Mod 13, Act 1: get_player_roleinfo_list)
-                    candidate_role_id = await self._fetch_best_cultivation_role(client, ctx)
+                # 解析可用仙露存量 (dew_count)
+                dew_count = reader_c.read_int32() if reader_c.remaining >= 4 else 0
+                _ = reader_c.read_int32() if reader_c.remaining >= 4 else 0
 
+                if c_lands:
+                    logger.info("已同步经典药园土地: 共 %d 块, 可用仙露: %d 滴", len(c_lands), dew_count)
+
+                    # 1.1 成熟作物一键单倍安全收获 (Mod 13, Act 6: harvest(farmland_id, is_double=0))
                     for cl in c_lands:
                         lid = cl["farmland_id"]
-                        # 1.1 成熟作物一键单倍安全收获 (Mod 13, Act 6: harvest(farmland_id, is_double=0))
                         if cl["is_plant"] != 0 and cl["grow_time"] <= 0:
                             try:
                                 h_pkt = PacketBuilder(mod=13, act=6).write_int32(lid).write_uint8(0).build()
                                 h_resp = await client.request(h_pkt, timeout_sec=2.0)
                                 if h_resp and len(h_resp) >= 1 and h_resp[0] in (0, 8):
                                     harvested_count += 1
+                                    cl["is_plant"] = 0  # 收获后地块重置为空闲
                                     logger.info("经典药园土地 #%d 仙草成功收获！", lid)
                             except Exception as e:
                                 logger.debug("经典药园土地 #%d 收获异常: %s", lid, e)
 
-                        # 1.2 空闲土地自动播种经验仙草 (Mod 13, Act 5: plant_herbs)
-                        elif cl["is_plant"] == 0:
+                    # 1.2 仙露土地品阶安全巡检升级 (Mod 13, Act 15 预检 + Act 16 升级)
+                    if dew_count > 0:
+                        upgraded_lands_count = await self._upgrade_lands_with_dew(client, c_lands, dew_count)
+
+                    # 1.3 经验树与发财树智能决策与补种 (Mod 13, Act 5: plant_herbs)
+                    candidate_role_id, needs_exp = await self._fetch_best_cultivation_role(client, ctx)
+
+                    if effective_plant_type == "exp_only":
+                        herbs_type = 2  # EXP_HERBS (经验树)
+                        target_role_id = candidate_role_id
+                        plant_type_desc = f"经验树(指定: 伙伴 #{candidate_role_id})"
+                    elif effective_plant_type == "coin_only":
+                        herbs_type = 3  # COIN_HERBS (发财树)
+                        target_role_id = ctx.player_id or 4
+                        plant_type_desc = "发财树(指定: 铜钱入库)"
+                    else:  # "auto"
+                        if needs_exp:
+                            herbs_type = 2
+                            target_role_id = candidate_role_id
+                            plant_type_desc = f"经验树(自适应: 伙伴 #{candidate_role_id})"
+                        else:
+                            herbs_type = 3
+                            target_role_id = ctx.player_id or 4
+                            plant_type_desc = "发财树(自适应: 全员满级转产铜钱)"
+
+                    for cl in c_lands:
+                        lid = cl["farmland_id"]
+                        if cl["is_plant"] == 0:
                             try:
-                                # herbs_type: 2=EXP_HERBS (经验草), is_double: 0 (普通单倍，零元宝)
+                                # herbs_type: 2=经验树, 3=发财树; is_double: 0 (普通单倍，零元宝)
                                 p_pkt = (
                                     PacketBuilder(mod=13, act=5)
                                     .write_int32(lid)
-                                    .write_int32(candidate_role_id)
-                                    .write_uint8(2)
+                                    .write_int32(target_role_id)
+                                    .write_uint8(herbs_type)
                                     .write_int8(0)
                                     .build()
                                 )
                                 p_resp = await client.request(p_pkt, timeout_sec=2.0)
                                 if p_resp and len(p_resp) >= 1 and p_resp[0] in (0, 8):
                                     planted_count += 1
-                                    logger.info("经典药园土地 #%d 成功为伙伴 #%d 播种经验仙草！", lid, candidate_role_id)
+                                    cl["is_plant"] = 1
+                                    logger.info("经典药园土地 #%d 成功播种【%s】！", lid, plant_type_desc)
                             except Exception as e:
                                 logger.debug("经典药园土地 #%d 播种异常: %s", lid, e)
         except Exception as exc:
@@ -223,36 +261,42 @@ class FarmTask(BaseTask):
             logger.debug("果园摇钱树免费次数巡检跳过: %s", exc)
 
         summary = (
-            f"药园与果园全域巡检完成: 仙草收获 {harvested_count} 块, 补种 {planted_count} 块, "
-            f"果园仙树采摘 {fairy_tree_count} 次, 仙令礼包={'已领取' if xianling_claimed else '今日已领/不可领'}"
+            f"药园与果园全域巡检完成: 仙草收获 {harvested_count} 块, 补种 {planted_count} 块 ({plant_type_desc}), "
+            f"土地升级 {upgraded_lands_count} 次, 果园仙树采摘 {fairy_tree_count} 次, "
+            f"仙令礼包={'已领取' if xianling_claimed else '今日已领/不可领'}"
         )
         logger.info(summary)
         return TaskResult.success(summary, data={
             "harvested_count": harvested_count,
             "planted_count": planted_count,
+            "upgraded_lands_count": upgraded_lands_count,
+            "plant_type_desc": plant_type_desc,
             "fairy_tree_count": fairy_tree_count,
             "xianling_claimed": xianling_claimed,
         })
 
-    async def _fetch_best_cultivation_role(self, client: SXDClient, ctx: GameContext) -> int:
-        """获取最适宜药园传功经验培养的伙伴角色 ID (Mod 13, Act 1)
+    async def _fetch_best_cultivation_role(self, client: SXDClient, ctx: GameContext) -> Tuple[int, bool]:
+        """获取最适宜药园传功经验培养的伙伴角色 ID 及是否需要经验 (Mod 13, Act 1)
 
-        优先挑选当前等级低于主角等级的待培养伙伴；若全员满级则回退给主角色。
+        优先挑选当前等级低于主角等级 (role_lvl < ctx.level) 的待培养伙伴；
+        若全部伙伴均已达到或超过主角等级（如大号全员 Lv.300），则 needs_exp = False。
 
         Args:
             client: 异步长连接客户端。
             ctx: 全局游戏上下文。
 
         Returns:
-            目标伙伴/主角 ID。
+            (目标角色 ID, 是否存在待培养伙伴 needs_exp)
         """
         candidate_role_id = ctx.player_id or 4
+        needs_exp = False
         try:
             req_roles = PacketBuilder(mod=13, act=1).build()
             resp_roles = await client.request(req_roles, timeout_sec=2.0)
             if resp_roles and len(resp_roles) >= 2:
                 reader = ByteArrayReader(resp_roles)
                 cnt = reader.read_uint16()
+                underleveled: List[Tuple[int, int]] = []
                 for _ in range(cnt):
                     if reader.remaining < 4:
                         break
@@ -262,13 +306,84 @@ class FarmTask(BaseTask):
                     role_lvl = reader.read_int32() if reader.remaining >= 4 else 0
                     if reader.remaining >= 29:
                         reader.skip(29)
-                    # 优先挑选等级落后于主角的伙伴
                     if role_lvl < ctx.level:
-                        candidate_role_id = role_id
-                        break
+                        underleveled.append((role_id, role_lvl))
+
+                if underleveled:
+                    # 优先挑选当前等级最低的伙伴
+                    underleveled.sort(key=lambda x: x[1])
+                    candidate_role_id = underleveled[0][0]
+                    needs_exp = True
         except Exception as exc:
             logger.debug("获取药园伙伴列表跳过: %s", exc)
-        return candidate_role_id
+        return candidate_role_id, needs_exp
+
+    async def _upgrade_lands_with_dew(
+        self,
+        client: SXDClient,
+        c_lands: List[Dict[str, Any]],
+        available_dew: int,
+    ) -> int:
+        """使用存量仙露安全升级土地品阶 (Mod 13, Act 15 预检 + Act 16 升级)
+
+        严格按照最低等级优先原则，采用三重零元宝熔断防御：
+        1. 存量守卫：available_dew <= 0 直接返回；
+        2. 元宝预检：调用 ingot_for_farmland(lid)，若需元宝 > 0 且仙露不足直接跳过；
+        3. 状态熔断：调用 up_farmland_level(lid)，若返回非 SUCCESS(8) 立即熔断终止后续升级。
+
+        Args:
+            client: 异步长连接客户端。
+            c_lands: 土地字典列表。
+            available_dew: 仙露可用存量。
+
+        Returns:
+            成功升级的土地次数。
+        """
+        upgraded_count = 0
+        cur_dew = available_dew
+        logger.info("检测到持有仙露 x%d，开始执行土地品阶巡检升级 (最低等级优先)...", cur_dew)
+
+        while cur_dew > 0:
+            # 按等级升序排序，挑选最低等级的土地
+            c_lands.sort(key=lambda x: (x.get("level", 0), x.get("farmland_id", 0)))
+            target_land = c_lands[0]
+            lid = target_land["farmland_id"]
+            cur_lvl = target_land.get("level", 0)
+
+            # 1. 预检升级所需元宝 (Mod 13, Act 15: ingot_for_farmland)
+            try:
+                p_probe = PacketBuilder(mod=13, act=15).write_int32(lid).build()
+                resp_probe = await client.request(p_probe, timeout_sec=2.0)
+                if resp_probe and len(resp_probe) >= 4:
+                    r_probe = ByteArrayReader(resp_probe)
+                    needed_ingot = r_probe.read_int32()
+                    if needed_ingot > 0:
+                        logger.info("土地 #%d 升级需消耗 %d 元宝，触发零元宝守卫中断升级", lid, needed_ingot)
+                        break
+            except Exception as e:
+                logger.debug("土地 #%d 升级元宝预检异常: %s", lid, e)
+
+            # 2. 尝试执行仙露升级 (Mod 13, Act 16: up_farmland_level)
+            try:
+                up_pkt = PacketBuilder(mod=13, act=16).write_int32(lid).build()
+                resp_up = await client.request(up_pkt, timeout_sec=2.0)
+                if resp_up and len(resp_up) >= 1:
+                    code = resp_up[0]
+                    if code in (0, 8):  # SUCCESS=8
+                        upgraded_count += 1
+                        cur_dew -= 1
+                        target_land["level"] = cur_lvl + 1
+                        logger.info("土地 #%d 成功升级至 Lv.%d (剩余仙露: %d)", lid, cur_lvl + 1, cur_dew)
+                    else:
+                        logger.info("土地 #%d 升级返回状态码 %d，立即熔断后续土地升级", lid, code)
+                        break
+                else:
+                    break
+            except Exception as ex:
+                logger.warning("土地 #%d 升级异常，熔断退出: %s", lid, ex)
+                break
+
+        return upgraded_count
 
     def _decode_farmlands(self, payload: bytes) -> List[Dict[str, Any]]:
         """解包新版药园土地列表 (Mod 13, Act 21)
