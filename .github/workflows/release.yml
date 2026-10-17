@@ -209,6 +209,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      ALIYUN_USER: ${{ secrets.ALIYUN_REGISTRY_USERNAME || secrets.ALIYUN_REGISTRY_USER || secrets.ACR_USERNAME || secrets.ALIYUN_USERNAME }}
+      ALIYUN_PASS: ${{ secrets.ALIYUN_REGISTRY_PASSWORD || secrets.ACR_PASSWORD || secrets.ALIYUN_PASSWORD }}
     steps:
       - name: 转换仓库名称为全小写
         run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
@@ -236,9 +239,6 @@ jobs:
           registry: registry.cn-chengdu.aliyuncs.com
           username: ${{ env.ALIYUN_USER }}
           password: ${{ env.ALIYUN_PASS }}
-        env:
-          ALIYUN_USER: ${{ secrets.ALIYUN_REGISTRY_USER || secrets.ACR_USERNAME || secrets.ALIYUN_USERNAME }}
-          ALIYUN_PASS: ${{ secrets.ALIYUN_REGISTRY_PASSWORD || secrets.ACR_PASSWORD || secrets.ALIYUN_PASSWORD }}
 
       - name: 提取 Docker 镜像元数据与标签
         id: meta
@@ -253,9 +253,6 @@ jobs:
             type=semver,pattern={{version}},value=${{ needs.build-artifacts.outputs.tag_name }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.build-artifacts.outputs.tag_name }}
             type=sha,format=short
-        env:
-          ALIYUN_USER: ${{ secrets.ALIYUN_REGISTRY_USER || secrets.ACR_USERNAME || secrets.ALIYUN_USERNAME }}
-          ALIYUN_PASS: ${{ secrets.ALIYUN_REGISTRY_PASSWORD || secrets.ACR_PASSWORD || secrets.ALIYUN_PASSWORD }}
 
       - name: 构建并推送多架构镜像 (amd64 / arm64)
         uses: docker/build-push-action@v6
