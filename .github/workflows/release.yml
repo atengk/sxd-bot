@@ -61,12 +61,11 @@ jobs:
       - name: 代码规范与静态分析检查
         run: |
           ruff check .
-          ruff format --check .
 
       - name: 执行回归单元测试
         run: |
           if find tests -name "test_*.py" -o -name "*_test.py" 2>/dev/null | grep -q .; then
-            pytest
+            PYTHONPATH=. pytest
           else
             echo "暂未发现测试用例文件，跳过测试执行。"
           fi

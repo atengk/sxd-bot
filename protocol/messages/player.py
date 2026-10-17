@@ -7,6 +7,7 @@
 """
 
 from dataclasses import dataclass, field
+from typing import Optional
 from protocol.packet import BasePacket, ByteArrayReader, ByteArrayWriter
 
 

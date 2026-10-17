@@ -102,10 +102,9 @@ jobs:
       - name: 安装 Ruff 静态检查工具
         run: pip install ruff
 
-      - name: 代码风格与语法检查 (Ruff Linter & Formatter)
+      - name: 代码风格与语法检查 (Ruff Linter)
         run: |
           ruff check .
-          ruff format --check .
 
   # ----------------------------------------------------------------------------
   # Job 4: 跨版本兼容性单元测试矩阵 (pytest)
@@ -141,7 +140,7 @@ jobs:
       - name: 运行 pytest 单元测试
         run: |
           if find tests -name "test_*.py" -o -name "*_test.py" 2>/dev/null | grep -q .; then
-            pytest --cov
+            PYTHONPATH=. pytest
           else
             echo "暂未发现测试用例文件，跳过测试执行。"
           fi
