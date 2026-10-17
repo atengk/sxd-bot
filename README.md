@@ -1,151 +1,192 @@
 # 神仙道无头协议自动化工具 (SXD Bot)
 
-基于逆向工程还原的二进制协议长连接，使用 Python 3.10+ 实现的独立无头自动化框架。
+<p align="center">
+  <a href="https://github.com/atengk/sxd-bot/releases"><img src="https://img.shields.io/github/v/release/atengk/sxd-bot?style=flat-square&color=2563eb" alt="GitHub Release"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue?style=flat-square&logo=python&logoColor=white" alt="Python Version"></a>
+  <a href="https://github.com/atengk/sxd-bot/pkgs/container/sxd-bot"><img src="https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Ready"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-green?style=flat-square" alt="License"></a>
+</p>
+
+<p align="center">
+  基于逆向二进制长连接协议的现代化神仙道无头自动化工具与 Web 控制台。<br/>
+  脱离 Flash 微端容器与模拟点击，内存占用极低（&lt;35MB），内置 35+ 项全功能日常福利收割、战斗极速扫荡与常驻自愈守护引擎。
+</p>
 
 ---
 
-## 1. 架构特性
+## 🌟 核心特性
 
-- **纯无头独立运行 (Headless)**：脱离微端 Flash 容器界面，使用真实 TCP Socket 交互，内存占用低（<30MB）。
-- **全自动 Web 登录 (Auto Web Auth)**：内置 3 步 Web 认证链，自动通过官方接口获取最新动态网关与有效会话令牌。
-- **全功能日常挂机流水线 (Comprehensive Routine Automation)**：
-  - **福利签到**：每日签到与七日登录福利自动领取；
-  - **招财神符**：免费招财神符自动领取（严格零元宝安全红线）；
-  - **帮派祭神**：白檀香神像祈福（声望+100，零元宝）；
-  - **吉星高照**：RollCake 状态与境界点同步巡检；
-  - **仙府药园**：土地状态精准同步，仙草生长维护；
-  - **摘仙桃与神龙**：一键摘取高阶仙桃斩获巨额升级经验，神龙日常喂养；
-  - **猎命系统**：NPC 状态同步，一键卖出厄运灰命变现，一键拾取命格入背包；
-  - **西天取经**：每日阵营俸禄领取与使者护送启程；
-  - **仙履奇缘**：每日奇遇智能答题，内置体力/声望最优收益选项匹配；
-  - **背包整理**：主背包智能归纳分类，低级杂物变卖变现，防爆仓掉落丢失。
-- **副本与战斗自动化 (Battle Automation)**：
-  - **每日精英副本**：自动挂机扫荡与快速秒完成结算；
-  - **普通副本极速扫荡**：自动感知剩余体力，批量快速扫荡清空体力防溢出（严格零元宝、自动变卖低级杂物）；
-  - **多人副本**：活动时段感知（每日 12:30-13:30 / 18:30-19:30）与自动组队挑战；
-  - **竞技场冲榜**：挑软柿子自动挑战，收割声望与排名奖励（每日免费 15 次挑战）；
-  - **世界 Boss 参战**：时段感知接入、免费阅历鼓舞战力、阵亡免费复活重返战场。
-- **严格零元宝安全红线 (Zero-Ingot Guardrail)**：内核级拦截非免费消耗，坚决杜绝误花元宝资产。
-- **多运行模式支持**：
-  - `--once`：单次跑完日常流水线后输出美化全功能战报并自动退出（配合系统计划任务）。
-  - `--daemon`：24 小时后台守护挂机，维持心跳并定期巡检。
-  - `--task <name>`：按需单独执行指定模块（支持 `sport`, `boss`, `travel`, `clean`, `worship`, `farm`, `peach_pet`, `fate`, `take_bible`, `hero_mission`, `multi_mission` 等）。
+- **纯无头二进制长连接 (Headless Socket)**：直接与官方 TCP 网关进行 Flash AMF/ByteArray 数据包交互，零 UI 渲染开销，支持 7×24 小时低资源耗用挂机。
+- **Web 控制台与自愈守护双模引擎 (Web & Daemon)**：内置基于 FastAPI + Element Plus 的响应式单页仪表盘，支持实时日志 SSE 流式推送、多账号纳管与态势感知看板。
+- **全方位安全门禁 (Security Gate)**：
+  - **访问口令门禁 (Web Token Gate)**：支持通过命令行 `--token`、环境变量 `SXD_WEB_TOKEN` 或设置面板配置访问密码，敏感接口与操作全量拦截校验。
+  - **严格零元宝安全红线 (Zero-Ingot Guardrail)**：内核级拦截非免费游戏消耗，杜绝任何误花元宝资产行为。
+  - **玩家自登顶号瞬态避让 (Evade Circuit Breaker)**：检测到客户端顶号时毫秒级切断连接并挂起托管，严格服从玩家端内最高操作权。
+- **全功能日常与战斗自动化流水线 (Comprehensive Routine)**：
+  - **日常福利**：每日签到、免费招财神符、帮派白檀香祭神、吉星高照 (RollCake)、仙府药园维护、仙桃与神龙、猎命系统（厄运灰命变卖/拾取）、西天取经、仙履奇缘智能答题、仙道问灵、周末狂欢双转盘、停服维护大礼包自动领取。
+  - **战斗与扫荡**：每日精英副本秒完成结算、普通副本体力极速清空（严格零元宝）、多人副本时段感知组队、竞技场挑选软柿子冲榜、世界 Boss 阅历鼓舞参战。
+  - **背包自理**：免排自理管道，自动开箱、丹药使用、杂物变现防爆仓。
 
 ---
 
-## 2. 目录结构
+## ⚡ 快速开始 (Docker 生产部署)
+
+推荐使用 Docker Compose 在 Linux 服务器（如 `/data/sxd-bot`）上一键部署：
+
+### 1. 编写 `docker-compose.yml`
+
+```yaml
+services:
+  sxd-bot:
+    image: registry.cn-chengdu.aliyuncs.com/atengk/sxd-bot:latest
+    container_name: sxd-bot-server
+    restart: unless-stopped
+    ports:
+      - "18000:8000"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - SXD_MODE=web
+      - SXD_HOST=0.0.0.0
+      - SXD_PORT=8000
+      # 可选：设置 Web 控制台访问密码 (留空则免密进入)
+      - SXD_WEB_TOKEN=${SXD_WEB_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+```
+
+### 2. 启动与更新服务
+
+```bash
+# 启动容器服务
+docker compose up -d
+
+# 一键滚动更新至最新版本 (自带镜像缓存清理)
+docker compose pull && docker compose up -d --remove-orphans && docker image prune -f
+```
+
+启动完成后，访问 `http://<服务器IP>:18000` 即可进入 Web 控制台。
+
+---
+
+## 🖥️ 本地 CLI 运行指南
+
+### 1. 环境准备
+
+```bash
+# 克隆代码库
+git clone https://github.com/atengk/sxd-bot.git
+cd sxd-bot
+
+# 安装运行依赖
+pip install -r requirements.txt
+```
+
+### 2. 常用运行模式
+
+```bash
+# 1. 启动 Web 控制台与自愈挂机调度服务 (推荐)
+python main.py web --host 0.0.0.0 --port 8000
+
+# 带口令门禁启动 Web 控制台
+python main.py web --token YOUR_SECRET_TOKEN
+
+# 2. 单次跑完日常福利流水线后自动退出 (配合系统计划任务)
+python main.py --config config/config.json --once
+
+# 3. 24 小时后台纯无头常驻挂机模式
+python main.py --config config/config.json --daemon
+
+# 4. 单独执行指定模块任务 (如竞技场、世界Boss、药园)
+python main.py -t sport         # 竞技场自动冲榜
+python main.py -t boss          # 世界 Boss 定时参战与鼓舞
+python main.py -t sweep         # 普通副本快速扫荡清空体力
+python main.py -t farm          # 仙府药园种植与采摘
+python main.py -t worship       # 帮派祭神 (白檀香)
+```
+
+---
+
+## 📂 目录结构与架构
 
 ```text
 sxd_bot/
-├── CONTEXT.md                  # 领域模型统一语言与术语表
-├── docs/
-│   ├── adr/                    # 架构决策记录 (0001 ~ 0007)
-│   ├── protocol/               # 逆向协议二进制封包规约速查矩阵
-│   ├── architecture/           # 架构模型与执行生命周期指南
-│   └── tools/                  # 逆向与流量嗅探 MCP 工具链实战指南
+├── .github/
+│   ├── workflows/              # GitHub Actions 二元流水线 (ci.yml / release.yml)
+│   ├── ISSUE_TEMPLATE/         # 规范化缺陷反馈与特性建议模板
+│   └── PULL_REQUEST_TEMPLATE.md
 ├── config/
-│   ├── config.example.json     # 配置文件模板
-│   └── config.json             # 真实本地凭据 (Git 已自动忽略)
+│   ├── config.example.json     # 本地配置文件模板
+│   └── config.json             # 真实本地凭据 (Git 自动忽略)
+├── core/
+│   ├── context.py              # GameContext 集中式状态池 (等级/资产/背包/场景)
+│   ├── events.py               # EventBus 事件广播与分发总线
+│   └── config.py               # 账号与应用全局配置管理
 ├── protocol/
-│   ├── frame.py                # 滑动窗口分帧与 zlib 判定状态机
+│   ├── frame.py                # 滑动窗口分帧与 zlib 解压状态机
 │   ├── packet.py               # Flash ByteArray 读写器与 BasePacket
-│   ├── builder.py              # 流式 PacketBuilder
 │   └── messages/               # 强类型数据包契约 (player.py, heartbeat.py)
 ├── network/
-│   ├── client.py               # 异步 TCP Socket 长连接与串行请求队列
+│   ├── client.py               # 异步 TCP Socket 长连接与请求队列
 │   └── web_auth.py             # 3 步全自动 Web 登录与网关提取
-├── core/
-│   ├── context.py              # GameContext 集中式状态池 (含等级、财富、场景)
-│   └── events.py               # EventBus 事件广播总线
 ├── tasks/
-│   ├── base.py                 # BaseTask 抽象基类与 TaskResult
-│   ├── scheduler.py            # 任务调度器 (支持单次流与后台周期)
-│   ├── routine/                # 日常福利与挂机任务
-│   │   ├── login.py            # 登录初始化与前置握手
-│   │   ├── heartbeat.py        # 3 秒活性对齐心跳保活
-│   │   ├── signin.py           # 每日签到与七日登录
-│   │   ├── money_tree.py       # 免费招财神符 (严格零元宝)
-│   │   ├── worship.py          # 帮派白檀香祭神 (声望+100, 零元宝)
-│   │   ├── lucky_star.py       # 吉星高照 (RollCake) 状态与境界点同步
-│   │   ├── farm.py             # 仙府药园土地状态同步与生长维护
-│   │   ├── peach_pet.py        # 摘仙桃 (巨额经验) 与神龙喂养
-│   │   ├── fate.py             # 猎命系统状态同步与灰命变现/拾取
-│   │   ├── take_bible.py       # 西天取经与阵营俸禄
-│   │   ├── travel_event.py     # 仙履奇缘智能答题
-│   │   ├── item_clean.py       # 背包智能整理与杂物变现
-│   │   └── online_gift.py      # 在线礼包巡检
-│   └── battle/                 # 副本与战斗自动化
-│       ├── hero_mission.py     # 每日精英副本挂机扫荡与秒完成
-│       ├── normal_mission.py   # 普通副本自动极速扫荡与体力清空
-│       ├── multi_mission.py    # 多人副本活动时段感知与自动组队挑战
-│       ├── super_sport.py      # 竞技场自动挑软柿子挑战冲榜
-│       └── world_boss.py       # 世界 Boss 定时参战与鼓舞
-├── tests/
-│   └── test_codec.py           # 编解码单元测试套件
-├── main.py                     # CLI 主启动入口 (支持 UTF-8 控制台美化战报)
-└── requirements.txt
+│   ├── routine/                # 每日福利与挂机任务 (签到/招财/药园/仙桃/问灵等)
+│   ├── battle/                 # 副本与战斗自动化 (精英副本/扫荡/竞技场/世界Boss)
+│   └── scheduler.py            # 双模任务调度器
+├── storage/
+│   ├── config_db.py            # SQLite 账号配置与运行设置持久化
+│   └── player_db.py            # 角色资产与背包快照持久化
+├── web/
+│   ├── app.py                  # FastAPI 主接入应用与鉴权中间件
+│   ├── session_manager.py      # 多账号长连接常驻自愈调度引擎
+│   ├── routes/                 # RESTful API 路由 (账号/任务/事件流/遥测)
+│   └── static/                 # Element Plus 前端响应式单页
+├── scripts/
+│   ├── commit.sh               # Conventional Commits 规范提交助手
+│   ├── release.sh              # 统合发版防呆与版本自增脚本
+│   └── update.sh               # 生产服务器一键滚动更新脚本
+├── Dockerfile                  # 生产级 Python 3.11-slim 极简多阶段构建
+├── docker-compose.yml          # 生产部署编排定义
+├── pyproject.toml              # 标准 Python 项目与工具链元数据
+└── CONTEXT.md                  # 领域模型统一语言与术语规约
 ```
 
 ---
 
-## 3. 常用运行命令
+## 📖 架构决策记录 (ADR)
 
-### 3.1 单次日常福利一键巡检 (默认推荐)
-```powershell
-python main.py -c config/config.json --once
-```
+本项目严格采用领域驱动与架构决策记录（Architecture Decision Records）追踪核心设计演进，详见 [`docs/adr/`](./docs/adr/)：
 
-### 3.2 24 小时常驻后台守护挂机
-```powershell
-python main.py -c config/config.json --daemon
-```
-
-### 3.3 单独执行指定模块
-```powershell
-# 竞技场挑软柿子自动冲榜
-python main.py -t sport
-
-# 世界 Boss 定时参战与鼓舞
-python main.py -t boss
-
-# 仙府药园
-python main.py -t farm
-
-# 帮派祭神 (白檀香)
-python main.py -t worship
-
-# 摘仙桃与神龙培养
-python main.py -t peach_pet
-
-# 猎命系统
-python main.py -t fate
-
-# 精英副本扫荡
-python main.py -t hero_mission
-
-# 普通副本极速扫荡 (清空剩余体力)
-python main.py -t sweep
-
-# 多人副本
-python main.py -t multi_mission
-```
+- [ADR 0001: 无头原生 TCP 长连接架构](./docs/adr/0001-headless-tcp-socket-architecture.md)
+- [ADR 0002: 自适应 3 步 Web 鉴权凭据换取机制](./docs/adr/0002-adaptive-web-auth-credential-exchange.md)
+- [ADR 0003: 协议封包滑动窗口分帧与编解码状态机](./docs/adr/0003-binary-packet-framing-and-codec.md)
+- [ADR 0004: 零元宝安全熔断机制与前置卫语句跳过策略](./docs/adr/0004-zero-ingot-guardrail-and-fail-fast-skipping.md)
+- [ADR 0005: 统一事件总线与双模任务调度器](./docs/adr/0005-unified-eventbus-and-dual-mode-scheduler.md)
+- [ADR 0021: 真实 Socket 引擎与一体化双主题控制台设计](./docs/adr/0021-real-socket-engine-and-cohesive-dual-theme-redesign.md)
+- [ADR 0022: 常驻自愈守护引擎与多租户存储隔离](./docs/adr/0022-continuous-autonomous-daemon-and-storage-isolation.md)
+- [ADR 0034: 工业级开源模版集成、容器化与生产服务器部署架构](./docs/adr/0034-oss-template-integration-containerization-and-server-deployment.md)
 
 ---
 
-## 4. 架构与领域文档导航
+## 🤝 参与贡献
 
-- **统一语言与领域术语**：[CONTEXT.md](./CONTEXT.md)
-- **架构决策记录 (ADR)**：
-  - [0001 无头原生 TCP 长连接架构](./docs/adr/0001-headless-tcp-socket-architecture.md)
-  - [0002 自适应 3 步 Web 鉴权凭据换取机制](./docs/adr/0002-adaptive-web-auth-credential-exchange.md)
-  - [0003 协议封包滑动窗口分帧与编解码状态机](./docs/adr/0003-binary-packet-framing-and-codec.md)
-  - [0004 零元宝安全熔断机制与前置卫语句跳过策略](./docs/adr/0004-zero-ingot-guardrail-and-fail-fast-skipping.md)
-  - [0005 统一事件总线与双模任务调度器](./docs/adr/0005-unified-eventbus-and-dual-mode-scheduler.md)
-  - [0006 Agent-Native MCP 逆向与流量嗅探工具链](./docs/adr/0006-agent-native-mcp-reverse-toolchain.md)
-  - [0007 普通副本极速扫荡与体力生命周期管理流水线](./docs/adr/0007-normal-mission-power-sweep-pipeline.md)
-- **逆向协议封包速查表**：[docs/protocol/mod_action_matrix.md](./docs/protocol/mod_action_matrix.md)
-- **系统架构模型与生命周期指南**：[docs/architecture/pipeline_and_lifecycle.md](./docs/architecture/pipeline_and_lifecycle.md)
-- **MCP 逆向与抓包工具链指南**：[docs/tools/mcp_reverse_and_traffic.md](./docs/tools/mcp_reverse_and_traffic.md)
+欢迎任何形式的贡献与建议！提交代码前请仔细阅读 [贡献指南 (CONTRIBUTING.md)](./CONTRIBUTING.md) 并遵循 Conventional Commits 规范。
 
+---
 
+## 📄 开源许可证
 
+本项目基于 [Apache License 2.0](./LICENSE) 协议开源。

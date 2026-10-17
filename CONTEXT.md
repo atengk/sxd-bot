@@ -472,11 +472,16 @@ _Avoid_: 伪整理, 强制排序, 空载荷整理, 整理后断线
 正在执行的异步日常与巡检流水线在每个任务原子动作前校验账号避让状态，一旦检测到避让立即中断后续子任务，彻底释放 Socket，服从玩家端内操作优先权。
 _Avoid_: 避让后发包, 异步继续, 离线后跑任务, 顶号后抢线
 
+### 容器化与运维部署 (Containerization & Deployment)
 
+**双模常驻容器 (Dual-mode Resident Container)**:
+在 Docker 容器内由单一主进程 (`python main.py web`) 同时拉起 FastAPI Web 控制台与后台自愈调度引擎的生产运行时形态，对外暴露标准 HTTP 健康探针并提供实时运维面板。
+_Avoid_: 纯后台无头进程, 裸脚本后台常驻, 双进程并立
 
+**双仓库镜像分发 (Dual-Registry Distribution)**:
+在 GitHub Actions 发版流水线中，通过单一构建流水线同时向 GitHub Packages (`ghcr.io`) 与境内阿里云容器镜像服务 (`registry.cn-chengdu.aliyuncs.com`) 双向推送多架构容器镜像的分发规约。
+_Avoid_: 单一镜像源, 手动构建上传, 国内海外源不一致
 
-
-
-
-
-
+**无感滚动更新 (Zero-Downtime Rollout)**:
+基于宿主机 `/data/sxd-bot/update.sh` 与 Docker Compose 编排，实现镜像拉取、依赖卷保留、容器轻量重构与旧缓存镜像清理（prune）的秒级自动化更新管线。
+_Avoid_: 手动停止删除容器, 全量重置数据目录, 数据卷丢失

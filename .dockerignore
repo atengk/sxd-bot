@@ -1,0 +1,69 @@
+# Git & VCS
+.git/
+.gitignore
+.gitattributes
+.githooks/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Sensitive Configuration & Credentials
+config/config.json
+.env*
+!config/config.example.json
+
+# Local Runtime SQLite & Databases
+data/*.db
+!data/protocol_manifest.db
+*.sqlite
+*.sqlite3
+
+# Logs & Diagnostics
+logs/
+*.log
+*.pcap
+*.pcapng
+
+# IDE & OS Artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Documentation & Markdown
+docs/
+*.md
+!README.md

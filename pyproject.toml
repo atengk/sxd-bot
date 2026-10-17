@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sxd-bot"
+version = "1.0.0"
+description = "神仙道无头协议自动化工具 (SXD Bot)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Ateng"}
+]
+keywords = ["sxd", "bot", "headless", "automation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+]
+dependencies = [
+    "rich>=13.0.0",
+    "aiohttp>=3.9.0",
+    "pydantic>=2.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.28.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+sxd-bot = "main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "network*", "protocol*", "services*", "storage*", "tasks*", "web*", "cli*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]

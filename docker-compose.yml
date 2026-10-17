@@ -1,0 +1,29 @@
+services:
+  sxd-bot:
+    image: registry.cn-chengdu.aliyuncs.com/atengk/sxd-bot:latest
+    container_name: sxd-bot-server
+    restart: unless-stopped
+    ports:
+      - "18000:8000"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - SXD_MODE=web
+      - SXD_HOST=0.0.0.0
+      - SXD_PORT=8000
+      - SXD_WEB_TOKEN=${SXD_WEB_TOKEN:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
