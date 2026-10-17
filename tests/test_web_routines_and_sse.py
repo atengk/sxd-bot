@@ -78,8 +78,8 @@ class TestWebRoutinesAndSSE(unittest.TestCase):
         data = resp.json()
         self.assertEqual(data["alias"], "主号")
         self.assertEqual(data["allowed_ingots"], 0)
-        self.assertEqual(len(data["enabled_routines"]), 35)
-        self.assertEqual(len(data["all_routines"]), 35)
+        self.assertEqual(len(data["enabled_routines"]), len(ALL_ROUTINES))
+        self.assertEqual(len(data["all_routines"]), len(ALL_ROUTINES))
         self.assertIn("money_tree", data["enabled_routines"])
         self.assertIn("farm", data["enabled_routines"])
 

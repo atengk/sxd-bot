@@ -65,6 +65,16 @@ class GameContext:
         """是否处于有效 TCP 连接状态"""
         return self._connected
 
+    @property
+    def player_id(self) -> int:
+        """玩家角色 ID 属性快捷读取"""
+        return self.player.player_id
+
+    @property
+    def level(self) -> int:
+        """玩家当前等级快捷读取"""
+        return self.player.level
+
     def set_connected(self, connected: bool) -> None:
         """更新网络连接活性"""
         self._connected = connected

@@ -57,7 +57,7 @@ class TakeBibleTask(BaseTask):
         try:
             # 1. 查询当前护送状态与剩余次数 (Mod 30, Act 2: get_take_bible_info)
             req_info = PacketBuilder(mod=30, act=2).build()
-            resp_info = await client.request(req_info, timeout_sec=2.5)
+            resp_info = await client.request(req_info, timeout_sec=1.5)
             logger.info("西天取经状态同步成功 (响应载荷: %d 字节, 十六进制: %s)", len(resp_info), resp_info.hex()[:40])
 
             # 2. 严格零元宝：直接调用免费启动护送 (Mod 30, Act 10: start_take_bible)

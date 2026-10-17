@@ -518,3 +518,33 @@ class ItemGetPlayerPackItemListResp(BasePacket):
             raw_payload=data,
         )
 
+
+@dataclass
+class ItemChooseBoxReq(BasePacket):
+    """自选礼盒选取选项并开启请求 (Mod 2, Act 160) - [ROUTINE_FREE]
+
+    @author Ateng
+    @since 2026-10-17
+    """
+
+    grid_id: int
+    choose_index: int = 1
+
+    def __init__(self, grid_id: int, choose_index: int = 1) -> None:
+        super().__init__(mod=2, act=160)
+        self.grid_id = grid_id
+        self.choose_index = choose_index
+
+    def encode_payload(self) -> bytes:
+        writer = ByteArrayWriter()
+        writer.write_int16(self.grid_id)
+        writer.write_int32(self.choose_index)
+        return writer.to_bytes()
+
+    @classmethod
+    def decode(cls, data: bytes) -> "ItemChooseBoxReq":
+        reader = ByteArrayReader(data)
+        gid = reader.read_int16() if reader.remaining >= 2 else 0
+        idx = reader.read_int32() if reader.remaining >= 4 else 1
+        return cls(grid_id=gid, choose_index=idx)
+

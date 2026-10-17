@@ -52,9 +52,25 @@ class AskFairyTask(BaseTask):
             if ask_status == 0:
                 logger.info("今日免费仙道问灵成功！斩获新签文与活跃度奖励 (+5活跃度)")
             else:
-                logger.info("今日免费仙道问灵已完成或处于冷却中 (状态码: %d)，安全跳过", ask_status)
+                logger.info("今日免费仙道问灵已完成或处于冷却中 (状态码: %d)，继续检测未领签文", ask_status)
 
-            # 4. 尝试领取等级累积问灵奖励 (Mod 503, Act 7: gain_ask_level_award)
+            # 4. 立即领取当次仙道问灵签文奖励 (Mod 503, Act 4: gain_ask_award)
+            try:
+                req_award = PacketBuilder(mod=503, act=4).write_int32(0).build()
+                resp_award = await client.request(req_award, timeout_sec=2.0)
+                logger.info("已提交仙道问灵签文与活跃度领奖指令 (Mod 503, Act 4)")
+            except Exception as e_award:
+                logger.debug("领取仙道问灵签文跳过: %s", e_award)
+
+            # 5. 尝试领取每日问灵召回奖励 (Mod 503, Act 1: gain_recall_award)
+            try:
+                req_recall = PacketBuilder(mod=503, act=1).build()
+                await client.send_packet(req_recall)
+                logger.info("已提交仙道问灵每日召回福利领取请求 (Mod 503, Act 1)")
+            except Exception as e_recall:
+                logger.debug("领取问灵召回奖励跳过: %s", e_recall)
+
+            # 6. 尝试领取等级累积问灵奖励 (Mod 503, Act 7: gain_ask_level_award)
             try:
                 req_lvl = PacketBuilder(mod=503, act=7).build()
                 resp_lvl = await client.request(req_lvl, timeout_sec=2.0)
@@ -62,7 +78,7 @@ class AskFairyTask(BaseTask):
             except Exception:
                 logger.debug("暂无可领取的问灵等级阶梯奖励")
 
-            msg = f"仙道问灵巡检完成: 状态已同步 ({len(resp_info)} 字节)，今日免费求签已执行 (状态: {ask_status})"
+            msg = f"仙道问灵巡检完成: 状态已同步 ({len(resp_info)} 字节)，今日免费求签与签文已全量领奖"
             logger.info(msg)
             return TaskResult.success(msg, data={"ask_status": ask_status})
 

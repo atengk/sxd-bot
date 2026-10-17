@@ -16,12 +16,10 @@ import logging
 from typing import Dict, Any, List, Optional
 from tasks.base import BaseTask, TaskResult
 from core.context import GameContext
-from network.client import SXDClient
 from protocol.messages.item import (
     ItemConstants,
-    ItemClassifyPackReq,
-    ItemClassifyPackResp,
     ItemPlayerUseGridItemReq,
+    ItemChooseBoxReq,
     ItemMovePackGridItemToWarehouseReq,
     ItemSellItemReq,
     ItemSellItemResp,
@@ -97,26 +95,19 @@ class ItemCleanTask(BaseTask):
                 logger.info(msg)
                 return TaskResult.success(msg, data={"empty_grids": empty_grids})
 
-            # 2. 第 1 阶：一键主背包智能自动归纳排序 (Mod 2, Act 52: classify_pack)
-            logger.info("[第 1 阶] 正在执行主背包智能自动整理归纳，合并碎片与堆叠...")
-            await client.send_packet(ItemClassifyPackReq())
-            await asyncio.sleep(0.6)
-
-            pack_info = await self._query_pack(client)
-            if pack_info:
-                pack_capacity, pack_items, warehouse_capacity, warehouse_items = pack_info
-                empty_grids = max(0, pack_capacity - len(pack_items))
-                logger.info("[第 1 阶] 整理后背包空格: %d 格", empty_grids)
-
+            # 2. 第 1 阶：主背包空间感知与梯度检测 (Q2 A: 剔除伪整理指令，零风险无损自理)
+            logger.info("[第 1 阶] 正在同步主背包格位分布与可用空间 (剩余 %d 空格)...", empty_grids)
             if empty_grids >= self.target_empty and not self.force_all and not self.use_only:
-                msg = f"第 1 阶整理归纳后背包空间达标 (剩余 {empty_grids} 格)，梯度达标即止安全退出"
+                msg = f"第 1 阶检测背包空间达标 (剩余 {empty_grids} 格)，梯度达标即止安全退出"
                 logger.info(msg)
                 return TaskResult.success(msg, data={"empty_grids": empty_grids, "stage": 1})
 
             # 3. 第 2 阶：开箱与使用消耗品 (Mod 2, Act 53: player_use_grid_item)
-            # 能打开的都打开：固定宝箱、自选宝箱 (默认选项)、经验丹、体力丹直接吃满
-            logger.info("[第 2 阶] 正在遍历并使用背包固定宝箱、自选礼盒、经验丹与全部体力丹...")
+            # 能打开的都打开：固定宝箱、自选宝箱 (默认选项)、经验丹、体力丹直接吃满、材料/消耗品盲开
+            logger.info("[第 2 阶] 正在遍历并使用背包固定宝箱、自选礼盒、经验丹、全部体力丹与消耗品...")
             for raw in list(pack_items):
+                if not client.context.is_connected:
+                    break
                 if empty_grids >= self.target_empty and not self.force_all and not self.use_only:
                     break
 
@@ -126,25 +117,36 @@ class ItemCleanTask(BaseTask):
                 grid_id = int(raw[2])
                 item_type = int(raw[20]) if len(raw) >= 21 and int(raw[20]) > 0 else (int(raw[9]) if len(raw) > 9 else 0)
 
-                # 识别是否可使用
+                # 1. 装备与任务道具跳过使用
+                if item_type in (1, 4):
+                    continue
+
                 meta = ImportantItemRegistry.get(item_id, {})
                 is_gift = meta.get("is_gift", False)
                 is_selective = meta.get("is_selective", False)
 
-                can_use = False
-                # 体力丹：全部使用，直接吃满
-                if item_id in (1001, 1002, 1003, 1004):
-                    can_use = True
-                # 经验丹、固定宝箱、自选宝箱 (按用户指示随便选默认项全开)、礼包、消耗品 (item_type == 2)
-                elif item_id in (2001, 2002, 2003) or is_gift or is_selective or item_type == 2:
-                    can_use = True
+                # 判定是否属于可使用范畴：体力丹、经验丹、礼包、自选礼盒、消耗品(2)、材料与消耗品(11)
+                can_use = (
+                    item_id in (1001, 1002, 1003, 1004)
+                    or item_id in (2001, 2002, 2003)
+                    or is_gift
+                    or is_selective
+                    or item_type in (2, 11)
+                )
 
                 if can_use:
                     try:
-                        logger.info("尝试使用格位 #%d 道具 (ItemID=%d, 自选=%s)...", grid_id, item_id, is_selective)
+                        logger.info("尝试使用格位 #%d 道具 (ItemID=%d, Type=%d, 自选=%s)...", grid_id, item_id, item_type, is_selective)
+                        # 调用官方标准单件/多件使用协议 player_use_grid_item
                         await client.send_packet(ItemPlayerUseGridItemReq(grid_id=grid_id))
+                        # 若为自选宝箱，调用 Mod 2 Act 160 自动选取首项开启
+                        if is_selective:
+                            try:
+                                await client.send_packet(ItemChooseBoxReq(grid_id=grid_id, choose_index=1))
+                            except Exception:
+                                pass
                         items_used += 1
-                        await asyncio.sleep(0.4)
+                        await asyncio.sleep(0.3)
                     except Exception as use_err:
                         logger.warning("使用格位 #%d 道具异常: %s", grid_id, use_err)
 
@@ -172,6 +174,8 @@ class ItemCleanTask(BaseTask):
             logger.info("[第 3 阶] 正在存入随身仓库 (随身仓库可用空格: %d)...", warehouse_free)
             if warehouse_free > 0:
                 for raw in list(pack_items):
+                    if not client.context.is_connected:
+                        break
                     if empty_grids >= self.target_empty and not self.force_all:
                         break
                     if warehouse_free <= 0:
@@ -208,6 +212,8 @@ class ItemCleanTask(BaseTask):
             # 5. 第 4 阶：仓库满后全部变卖/丢弃兜底 (Q4 B: 仓满全丢)
             logger.info("[第 4 阶] 随身仓库已满，正在执行背包剩余物品全量变卖与丢弃清空 (Q4 B 模式)...")
             for raw in list(pack_items):
+                if not client.context.is_connected:
+                    break
                 if empty_grids >= self.target_empty and not self.force_all:
                     break
 

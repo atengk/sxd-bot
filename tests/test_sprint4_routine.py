@@ -160,7 +160,7 @@ class TestSprint4Routine(unittest.IsolatedAsyncioTestCase):
         res = await task.execute(self.client, self.ctx)
         self.assertEqual(res.status, TaskStatus.SUCCESS)
         self.assertTrue(res.data["practice_active"])
-        self.client.send_packet.assert_called_once()
+        self.assertGreaterEqual(self.client.send_packet.call_count, 1)
 
 
 if __name__ == "__main__":

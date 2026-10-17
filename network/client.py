@@ -250,6 +250,21 @@ class SXDClient:
                     resp.power,
                     resp.town_map_id,
                 )
+                if self.event_bus:
+                    alias = self.context.extra_props.get("alias", "")
+                    if alias:
+                        self.event_bus.publish(
+                            "ACCOUNT_DATA_UPDATED",
+                            {
+                                "type": "ACCOUNT_DATA_UPDATED",
+                                "alias": alias,
+                                "power": resp.power,
+                                "coins": resp.coins,
+                                "ingots": resp.ingots,
+                                "level": resp.level,
+                                "timestamp": time.time(),
+                            },
+                        )
             elif mod == 0 and act == 3:
                 # 角色属性变更广播 (Mod_Player_Base.update_player_data)
                 # 报文格式: [2B Count] + N * [1B PropID + 8B Value]
@@ -290,5 +305,21 @@ class SXDClient:
                                 self.context.update_fame(val)
                             elif prop_id == 39:
                                 self.context.update_vip(val)
+
+                        if self.event_bus:
+                            alias = self.context.extra_props.get("alias", "")
+                            if alias:
+                                self.event_bus.publish(
+                                    "ACCOUNT_DATA_UPDATED",
+                                    {
+                                        "type": "ACCOUNT_DATA_UPDATED",
+                                        "alias": alias,
+                                        "power": self.context.player.power,
+                                        "coins": self.context.player.coins,
+                                        "ingots": self.context.player.ingots,
+                                        "level": self.context.player.level,
+                                        "timestamp": time.time(),
+                                    },
+                                )
         except Exception as exc:
             logger.warning("解析并同步状态上下文异常 [Mod=%d, Act=%d]: %s", mod, act, exc)

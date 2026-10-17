@@ -60,6 +60,8 @@ ALL_ROUTINES: List[str] = [
     "assistant",
     "travel_event",
     "practice",
+    "take_award",
+    "release_welfare",
 ]
 
 

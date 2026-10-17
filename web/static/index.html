@@ -1985,6 +1985,28 @@
             } catch (err) {}
           });
 
+          eventSource.addEventListener('ACCOUNT_DATA_UPDATED', (e) => {
+            try {
+              const d = JSON.parse(e.data);
+              const target = accounts.value.find(a => a.alias === d.alias);
+              if (target) {
+                if (!target.telemetry) target.telemetry = {};
+                if (d.power !== undefined) target.telemetry.power = d.power;
+                if (d.coins !== undefined) target.telemetry.coins = d.coins;
+                if (d.ingots !== undefined) target.telemetry.ingots = d.ingots;
+                if (d.level !== undefined) target.telemetry.level = d.level;
+
+                if (drawer.value.visible && drawer.value.account?.alias === d.alias) {
+                  if (!drawer.value.telemetry) drawer.value.telemetry = {};
+                  if (d.power !== undefined) drawer.value.telemetry.power = d.power;
+                  if (d.coins !== undefined) drawer.value.telemetry.coins = d.coins;
+                  if (d.ingots !== undefined) drawer.value.telemetry.ingots = d.ingots;
+                  if (d.level !== undefined) drawer.value.telemetry.level = d.level;
+                }
+              }
+            } catch (err) {}
+          });
+
           eventSource.addEventListener('ACCOUNT_DISCONNECTED', (e) => {
             try {
               const d = JSON.parse(e.data);

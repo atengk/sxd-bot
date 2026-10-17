@@ -17,7 +17,6 @@ from unittest.mock import AsyncMock, MagicMock
 from tasks.routine.item_clean import ItemCleanTask, PROTECTED_ITEM_IDS
 from protocol.messages.item import (
     ItemConstants,
-    ItemClassifyPackReq,
     ItemGetPlayerPackItemListResp,
     ItemPlayerUseGridItemReq,
     ItemMovePackGridItemToWarehouseReq,
@@ -62,38 +61,25 @@ class TestItemCleanTask(unittest.IsolatedAsyncioTestCase):
         self.assertIn("可用空间充足", result.message)
         self.assertEqual(self.mock_client.send_packet.call_count, 0)
 
-    async def test_stage1_classify_pack_resolves_space(self) -> None:
-        """测试第一阶整理背包后若已满足目标空格，则提前退出"""
-        full_items = [[i, 100, i] + [0] * 18 for i in range(1, 49)]
-        init_resp = ItemGetPlayerPackItemListResp(
-            pack_capacity=48,
-            pack_empty_grids=0,
-            pack_items=full_items,
-            warehouse_capacity=48,
-            warehouse_items=[],
-        )
-        after_items = [[i, 100, i] + [0] * 18 for i in range(1, 43)]
-        after_resp = ItemGetPlayerPackItemListResp(
+    async def test_stage1_space_check_resolves_space(self) -> None:
+        """测试第一阶空间检测若已满足目标空格，则零发包安全退出 (Q2 A 模式)"""
+        pack_items = [[i, 100, i] + [0] * 18 for i in range(1, 43)]
+        resp = ItemGetPlayerPackItemListResp(
             pack_capacity=48,
             pack_empty_grids=6,
-            pack_items=after_items,
+            pack_items=pack_items,
             warehouse_capacity=48,
             warehouse_items=[],
         )
 
-        self.mock_client.request.side_effect = [
-            init_resp.encode_payload(),
-            after_resp.encode_payload(),
-        ]
+        self.mock_client.request.return_value = resp.encode_payload()
 
         task = ItemCleanTask(target_empty=5, force_all=False)
         result = await task.execute(self.mock_client, self.mock_ctx)
 
         self.assertTrue(result.is_success)
-        self.assertIn("第 1 阶整理归纳后背包空间达标", result.message)
-        self.assertEqual(self.mock_client.send_packet.call_count, 1)
-        sent_pkt = self.mock_client.send_packet.call_args[0][0]
-        self.assertIsInstance(sent_pkt, ItemClassifyPackReq)
+        self.assertIn("空间充足", result.message)
+        self.assertEqual(self.mock_client.send_packet.call_count, 0)
 
     async def test_stage2_use_all_consumables_including_selective_box_and_stamina(self) -> None:
         """测试第二阶使用所有宝箱与消耗品：无视体力阈值全部吃满体力丹，自选宝箱默认开第一项"""
@@ -124,7 +110,6 @@ class TestItemCleanTask(unittest.IsolatedAsyncioTestCase):
 
         self.mock_client.request.side_effect = [
             init_resp.encode_payload(),
-            after_classify_resp.encode_payload(),
             after_use_resp.encode_payload(),
         ]
 
@@ -176,7 +161,6 @@ class TestItemCleanTask(unittest.IsolatedAsyncioTestCase):
 
         self.mock_client.request.side_effect = [
             init_resp.encode_payload(),
-            after_classify.encode_payload(),
             after_stage2.encode_payload(),
             after_stage3.encode_payload(),
         ]
@@ -223,7 +207,6 @@ class TestItemCleanTask(unittest.IsolatedAsyncioTestCase):
 
         self.mock_client.request.side_effect = [
             init_resp.encode_payload(),
-            after_classify.encode_payload(),
             after_stage2.encode_payload(),
             after_stage3.encode_payload(),
             sell_resp1.encode_payload(),

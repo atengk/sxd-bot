@@ -58,6 +58,8 @@ from tasks.routine.five_fu import FiveFuTask
 from tasks.routine.nimbus import NimbusTask
 from tasks.routine.link_fate import LinkFateTask
 from tasks.routine.home import HomeTask
+from tasks.routine.take_award import TakeAwardTask
+from tasks.routine.release_welfare import ReleaseWelfareTask
 from tasks.routine.union_worship import UnionWorshipTask
 from tasks.routine.memory_zone import MemoryZoneTask
 
@@ -120,6 +122,10 @@ ROUTINE_TASK_BUILDERS: Dict[str, Callable[[], Any]] = {
     "worship_union": lambda: UnionWorshipTask(),
     "memory_zone": lambda: MemoryZoneTask(),
     "memory": lambda: MemoryZoneTask(),
+    "take_award": lambda: TakeAwardTask(),
+    "award": lambda: TakeAwardTask(),
+    "release_welfare": lambda: ReleaseWelfareTask(),
+    "welfare": lambda: ReleaseWelfareTask(),
 }
 
 
@@ -443,7 +449,7 @@ class AccountSessionManager:
         return True
 
     async def _run_patrol_internal(self, alias: str) -> None:
-        """常驻周期自愈巡检：药园收种、点金助友、防体力溢出扫荡与全景态势即查即存"""
+        """常驻周期自愈巡检：药园果园收种采摘、练功结算续练、领奖大厅、问灵领奖、更新福利、点金助友、防体力溢出与全景态势"""
         lock = self._get_account_lock(alias)
         async with lock:
             session = self._sessions.get(alias, {})
@@ -452,20 +458,52 @@ class AccountSessionManager:
             if not (client and client.context.is_connected and ctx):
                 return
             try:
-                # 1. 仙府药园收获与补种
+                # 1. 仙府药园收获与补种 (Mod 13)
                 from tasks.routine.farm import FarmTask
                 await FarmTask().execute(client, ctx)
-                # 2. 点金助友
+
+                # 2. 果园：齐天大圣摘仙桃与果园仙树 (Mod 40)
+                from tasks.routine.peach_pet import PeachAndPetTask
+                await PeachAndPetTask().execute(client, ctx)
+
+                # 3. 城镇打坐挂机经验结算与无缝续练 (Mod 0)
+                from tasks.routine.practice import PracticeTask
+                await PracticeTask().execute(client, ctx)
+
+                # 4. 【领取奖励】大厅与全服福利总管 (Mod 2, Mod 20, Mod 28, Mod 712, Mod 89)
+                from tasks.routine.take_award import TakeAwardTask
+                await TakeAwardTask().execute(client, ctx)
+
+                # 5. 仙道问灵求签与奖励闭环 (Mod 503)
+                from tasks.routine.ask_fairy import AskFairyTask
+                await AskFairyTask().execute(client, ctx)
+
+                # 6. 版本更新福利与维护补偿 (Mod 240)
+                from tasks.routine.release_welfare import ReleaseWelfareTask
+                await ReleaseWelfareTask().execute(client, ctx)
+
+                # 7. 周末狂欢礼包、委托与转盘免费抽取 (Mod 637, 638, 242, 644)
+                from tasks.routine.weekend import WeekendRevelryTask
+                await WeekendRevelryTask().execute(client, ctx)
+
+                # 8. 点金助友 (Mod 551)
                 from tasks.routine.touch_stone import GoldenTouchStoneTask
                 await GoldenTouchStoneTask().execute(client, ctx)
-                # 3. 体力防溢出自动扫荡 (若当前体力 >= 5 则消耗体力)
+
+                # 8. 背包消耗品与宝箱安全自动使用 (Mod 2: use_only=True, 绝不丢弃存仓)
+                from tasks.routine.item_clean import ItemCleanTask
+                await ItemCleanTask(target_empty=5, force_all=False, use_only=True).execute(client, ctx)
+
+                # 9. 体力防溢出自动扫荡 (若当前体力 >= 5 则消耗体力)
                 if ctx.player.power >= 5:
                     from tasks.battle.normal_mission import NormalMissionSweepTask
                     await NormalMissionSweepTask().execute(client, ctx)
-                # 4. 小助手活跃度领奖
+
+                # 10. 小助手活跃度领奖 (Mod 52)
                 from tasks.routine.assistant import AssistantTask
                 await AssistantTask().execute(client, ctx)
-                # 5. 全景态势即查即存与推流
+
+                # 11. 全景态势即查即存与推流
                 pdb = self.get_player_db(alias)
                 if pdb:
                     query_srv = QueryService(client=client, context=ctx, player_db=pdb)
@@ -605,11 +643,18 @@ class AccountSessionManager:
                     )
                 except Exception as q_exc:
                     logger.warning("[%s] 托管初次态势感知同步异常 (非致命): %s", alias, q_exc)
-
                 logger.info("[%s] 长连接常驻托管就绪，角色: %s (Lv.%d)", alias, ctx.player.nickname, ctx.player.level)
 
+                # 握手建连成功，立即前置拉起首轮自愈巡检 (药园收种、果园仙桃、打坐结算、福利总管、问灵与更新福利)
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._run_patrol_internal(alias))
+                except Exception as p_err:
+                    logger.warning("[%s] 启动初次自愈巡检异常: %s", alias, p_err)
+
                 # 分层双轨守护主循环：心跳保活 + 周期自愈巡检 + 跨天清盘
-                heartbeat_pkt = PacketBuilder(mod=0, act=1).build()
+                # 官方标准心跳时钟校准报文 (Mod 0, Act 22: server_time)
+                heartbeat_pkt = PacketBuilder(mod=0, act=22).build()
                 while client.context.is_connected:
                     acc_cur = self.db.get_account(alias)
                     if not acc_cur or not acc_cur.hosting_enabled or acc_cur.evade_state == "evading":
@@ -658,15 +703,17 @@ class AccountSessionManager:
                     {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
                 )
 
-                # 4. 零容忍服从避让：非避让模式下的异常断开 (收到服务端 EOF/Reset)，坚决不自动重连抢线，立即触发防互踢避让
+                # 4. 活跃长连接被服务端主动切断 (EOF/Reset)：
+                # 在神仙道网关单点登录机制下，此现象 100% 代表玩家已在官方微端/浏览器自登顶号！
+                # 必须严格遵循防互踢避让准则，立即触发让位并切断常驻重试协程，坚决不与玩家抢号！
                 acc_now = self.db.get_account(alias)
                 if acc_now and acc_now.hosting_enabled and acc_now.enabled and acc_now.evade_state != "evading":
                     logger.warning(
-                        "[%s] 托管长连接非正常断开 (收到服务端 EOF/Reset)，零容忍立即触发防互踢避让以保护微端玩家！",
+                        "[%s] 检测到活跃托管长连接被服务端主动切断 (EOF/微端登录)，立即触发防互踢避让让位！",
                         alias,
                     )
-                    self.trigger_evade(alias, reason="微端登录让位 (EOF断开)", probe_delay_sec=3600.0)
-                    continue
+                    self.trigger_evade(alias, reason="微端/网页端自登让位 (EOF断开)")
+                    break
 
             except asyncio.CancelledError:
                 logger.info("[%s] 托管工作协程安全取消", alias)
@@ -953,6 +1000,17 @@ class AccountSessionManager:
                     active_client = session.get("client")
                     active_ctx = session.get("context")
 
+                    # 若该账号正处于托管中或后台连接任务活跃中，等待长连接握手就绪，绝对不开辟第二连接导致自踢互踢
+                    is_hosting = acc.hosting_enabled or (alias in self._hosting_tasks and not self._hosting_tasks[alias].done())
+                    if is_hosting and not (active_client and active_client.context.is_connected and active_ctx):
+                        for _ in range(20):
+                            await asyncio.sleep(0.5)
+                            session = self._sessions.get(alias, {})
+                            active_client = session.get("client")
+                            active_ctx = session.get("context")
+                            if active_client and active_client.context.is_connected and active_ctx:
+                                break
+
                     if active_client and active_client.context.is_connected and active_ctx:
                         client = active_client
                         ctx = active_ctx
@@ -1044,6 +1102,24 @@ class AccountSessionManager:
 
                     # 2. 依次调度执行各子任务
                     for r in routines:
+                        # 0. 避让熔断急停：若账号当前已进入防互踢避让状态，立即优雅终止后续子任务并释放连接
+                        acc_check = self.db.get_account(alias)
+                        if acc_check and acc_check.evade_state == "evading":
+                            logger.warning("[%s] 账号已处于防互踢避让状态，日常流水线触发避让熔断急停 (中止于任务: %s)", alias, r)
+                            self.event_bus.publish(
+                                "routine_step",
+                                {
+                                    "type": "routine_step",
+                                    "alias": alias,
+                                    "task_id": task_id,
+                                    "step": r,
+                                    "status": "failed",
+                                    "message": "账号已触发微端防互踢避让，日常流水线熔断急停让位",
+                                    "timestamp": time.time(),
+                                },
+                            )
+                            break
+
                         # 断网级联熔断保护：若底层 Socket 已断开，立即紧急终止后续调度
                         if not (client and client.context.is_connected):
                             logger.warning("[%s] 底层网络连接已中断，紧急熔断终止后续日常调度 (中断于任务: %s)", alias, r)
