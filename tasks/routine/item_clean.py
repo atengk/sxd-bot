@@ -14,6 +14,7 @@
 import asyncio
 import logging
 from typing import Dict, Any, List, Optional
+from network.client import SXDClient
 from tasks.base import BaseTask, TaskResult
 from core.context import GameContext
 from protocol.messages.item import (
