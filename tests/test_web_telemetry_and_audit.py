@@ -27,6 +27,7 @@ from storage.player_db import (
     InventoryItemRecord,
     ModuleStateRecord,
     AuditLogRecord,
+    AssetTransactionRecord,
 )
 from web.app import create_app
 from web.session_manager import AccountSessionManager
@@ -170,6 +171,26 @@ class TestWebTelemetryAndAudit(unittest.TestCase):
             )
         )
 
+        # 预置资产收支流水与每日汇总数据
+        self.player_db.record_asset_transaction(
+            AssetTransactionRecord(
+                asset_type="coin",
+                change_type="income",
+                amount=50000,
+                balance_after=2550000,
+                reason="仙府药园收获",
+            )
+        )
+        self.player_db.record_asset_transaction(
+            AssetTransactionRecord(
+                asset_type="ingot",
+                change_type="expense",
+                amount=10,
+                balance_after=870,
+                reason="微端/外部变动",
+            )
+        )
+
         os.environ.pop("SXD_WEB_TOKEN", None)
         self.app = create_app(db=self.config_db, session_manager=self.session_manager)
         self.client = TestClient(self.app)
@@ -277,6 +298,37 @@ class TestWebTelemetryAndAudit(unittest.TestCase):
         self.assertIn("action_name", first_audit)
         self.assertFalse(first_audit["allow_ingot"])
 
+    def test_get_asset_transactions(self) -> None:
+        """测试获取资产收支流水与今日汇总明细"""
+        resp = self.client.get("/api/accounts/主号/asset-transactions")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data["alias"], "主号")
+
+        # 验证今日汇总
+        today = data["today_summary"]
+        self.assertIn("stat_date", today)
+        self.assertEqual(today["coins_income"], 50000)
+        self.assertEqual(today["ingots_expense"], 10)
+
+        # 验证流水列表
+        txs = data["transactions"]
+        self.assertEqual(len(txs), 2)
+        first_tx = txs[0]
+        self.assertEqual(first_tx["asset_type"], "ingot")
+        self.assertEqual(first_tx["change_type"], "expense")
+        self.assertEqual(first_tx["amount"], 10)
+        self.assertEqual(first_tx["balance_after"], 870)
+        self.assertEqual(first_tx["reason"], "微端/外部变动")
+        self.assertIn("time_str", first_tx)
+
+        # 验证按 asset_type 筛选
+        resp_coin = self.client.get("/api/accounts/主号/asset-transactions?asset_type=coin")
+        self.assertEqual(resp_coin.status_code, 200)
+        coin_txs = resp_coin.json()["transactions"]
+        self.assertEqual(len(coin_txs), 1)
+        self.assertEqual(coin_txs[0]["asset_type"], "coin")
+
     def test_token_gate_on_telemetry(self) -> None:
         """测试 Token 门禁在只读遥测路由上的安全防护"""
         os.environ["SXD_WEB_TOKEN"] = "telemetry_guard_token"
@@ -287,12 +339,14 @@ class TestWebTelemetryAndAudit(unittest.TestCase):
         self.assertEqual(client.get("/api/accounts/主号/telemetry").status_code, 401)
         self.assertEqual(client.get("/api/accounts/主号/assistant").status_code, 401)
         self.assertEqual(client.get("/api/accounts/主号/audit-logs").status_code, 401)
+        self.assertEqual(client.get("/api/accounts/主号/asset-transactions").status_code, 401)
 
         # 2. 携带有效 Token -> 200
         headers = {"Authorization": "Bearer telemetry_guard_token"}
         self.assertEqual(client.get("/api/accounts/主号/telemetry", headers=headers).status_code, 200)
         self.assertEqual(client.get("/api/accounts/主号/assistant", headers=headers).status_code, 200)
         self.assertEqual(client.get("/api/accounts/主号/audit-logs", headers=headers).status_code, 200)
+        self.assertEqual(client.get("/api/accounts/主号/asset-transactions", headers=headers).status_code, 200)
 
 
 if __name__ == "__main__":

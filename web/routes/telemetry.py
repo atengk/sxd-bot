@@ -44,22 +44,49 @@ def get_item_quality(item_id: int, item_type: int = 0, props: Optional[Dict[str,
     return "white"
 
 
-def generate_asset_history(profile: Optional[PlayerProfileRecord]) -> List[Dict[str, Any]]:
-    """根据最新角色资产快照生成 7 日资产历史走势"""
+def generate_asset_history(
+    profile: Optional[PlayerProfileRecord],
+    player_db: Optional[PlayerDatabase] = None,
+) -> List[Dict[str, Any]]:
+    """根据每日资产汇总表生成真实 7 日资产历史走势"""
     now = time.time()
-    base_coins = profile.coins if profile else 1000000
-    base_ingots = profile.ingots if profile else 500
-    history = []
+    base_coins = profile.coins if profile else 0
+    base_ingots = profile.ingots if profile else 0
+
+    summaries = player_db.get_daily_asset_summaries(days=7) if player_db else []
+    summary_map = {s.stat_date: s for s in summaries}
+
+    history: List[Dict[str, Any]] = []
     for i in range(6, -1, -1):
         day_time = now - (i * 86400)
+        full_date = time.strftime("%Y-%m-%d", time.localtime(day_time))
         date_str = time.strftime("%m-%d", time.localtime(day_time))
-        factor = 1.0 - (i * 0.05)
-        history.append({
-            "date": date_str,
-            "coins": max(0, int(base_coins * factor)),
-            "ingots": max(0, int(base_ingots * factor)),
-        })
+
+        if full_date in summary_map:
+            s = summary_map[full_date]
+            history.append({
+                "date": date_str,
+                "full_date": full_date,
+                "coins": s.closing_coins,
+                "ingots": s.closing_ingots,
+                "coins_income": s.coins_income,
+                "coins_expense": s.coins_expense,
+                "ingots_income": s.ingots_income,
+                "ingots_expense": s.ingots_expense,
+            })
+        else:
+            history.append({
+                "date": date_str,
+                "full_date": full_date,
+                "coins": base_coins,
+                "ingots": base_ingots,
+                "coins_income": 0,
+                "coins_expense": 0,
+                "ingots_income": 0,
+                "ingots_expense": 0,
+            })
     return history
+
 
 
 @router.get("/{alias}/telemetry", response_model=Dict[str, Any])
@@ -221,13 +248,95 @@ async def get_audit_logs(alias: str, request: Request) -> Dict[str, Any]:
         for r in raw_logs
     ]
 
-    asset_history = generate_asset_history(profile)
+    asset_history = generate_asset_history(profile, player_db)
+
+    today_rec = player_db.get_today_asset_summary() if player_db else None
+    today_summary = {
+        "stat_date": today_rec.stat_date if today_rec else time.strftime("%Y-%m-%d"),
+        "opening_coins": today_rec.opening_coins if today_rec else (profile.coins if profile else 0),
+        "closing_coins": today_rec.closing_coins if today_rec else (profile.coins if profile else 0),
+        "coins_income": today_rec.coins_income if today_rec else 0,
+        "coins_expense": today_rec.coins_expense if today_rec else 0,
+        "opening_ingots": today_rec.opening_ingots if today_rec else (profile.ingots if profile else 0),
+        "closing_ingots": today_rec.closing_ingots if today_rec else (profile.ingots if profile else 0),
+        "ingots_income": today_rec.ingots_income if today_rec else 0,
+        "ingots_expense": today_rec.ingots_expense if today_rec else 0,
+    }
 
     return {
         "alias": alias,
         "asset_history": asset_history,
+        "today_summary": today_summary,
         "audit_records": audit_records,
         "total_audit_count": len(audit_records),
+    }
+
+
+@router.get("/{alias}/asset-transactions", response_model=Dict[str, Any])
+async def get_asset_transactions(
+    alias: str,
+    request: Request,
+    limit: int = 50,
+    asset_type: Optional[str] = None,
+    stat_date: Optional[str] = None,
+) -> Dict[str, Any]:
+    """获取指定账号的元宝与铜钱资产收支流水明细及今日汇总"""
+    db: ConfigDatabase = request.app.state.db
+    acc = db.get_account(alias)
+    if not acc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"账号 '{alias}' 不存在",
+        )
+
+    session_manager = getattr(request.app.state, "session_manager", None)
+    player_db: Optional[PlayerDatabase] = (
+        session_manager.get_player_db(alias) if session_manager else None
+    )
+
+    profile = player_db.get_player_profile() if player_db else None
+    today_rec = player_db.get_today_asset_summary() if player_db else None
+    today_summary = {
+        "stat_date": today_rec.stat_date if today_rec else time.strftime("%Y-%m-%d"),
+        "opening_coins": today_rec.opening_coins if today_rec else (profile.coins if profile else 0),
+        "closing_coins": today_rec.closing_coins if today_rec else (profile.coins if profile else 0),
+        "coins_income": today_rec.coins_income if today_rec else 0,
+        "coins_expense": today_rec.coins_expense if today_rec else 0,
+        "opening_ingots": today_rec.opening_ingots if today_rec else (profile.ingots if profile else 0),
+        "closing_ingots": today_rec.closing_ingots if today_rec else (profile.ingots if profile else 0),
+        "ingots_income": today_rec.ingots_income if today_rec else 0,
+        "ingots_expense": today_rec.ingots_expense if today_rec else 0,
+    }
+
+    raw_txs = (
+        player_db.get_recent_asset_transactions(
+            limit=limit,
+            asset_type=asset_type,
+            stat_date=stat_date,
+        )
+        if player_db
+        else []
+    )
+
+    transactions = [
+        {
+            "id": t.id,
+            "asset_type": t.asset_type,
+            "change_type": t.change_type,
+            "amount": t.amount,
+            "balance_after": t.balance_after,
+            "reason": t.reason,
+            "created_at": t.created_at,
+            "time_str": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t.created_at)),
+        }
+        for t in raw_txs
+    ]
+
+    return {
+        "alias": alias,
+        "today_summary": today_summary,
+        "transactions": transactions,
+        "total_count": len(transactions),
     }
 
 

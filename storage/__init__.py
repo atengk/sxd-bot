@@ -21,15 +21,19 @@ from storage.facade import (
     InventoryRepository,
     ModuleStateRepository,
     PlayerRepository,
+    AssetRepository,
 )
 from storage.player_db import (
     MAX_FIFO_RECORDS,
+    MAX_ASSET_TRANSACTION_RECORDS,
     AuditLogRecord,
     BattleRecord,
     InventoryItemRecord,
     ModuleStateRecord,
     PlayerDatabase,
     PlayerProfileRecord,
+    AssetTransactionRecord,
+    DailyAssetSummaryRecord,
 )
 from storage.protocol_db import (
     ActionMeta,
@@ -63,8 +67,11 @@ __all__ = [
     "ModuleStateRecord",
     "BattleRecord",
     "AuditLogRecord",
+    "AssetTransactionRecord",
+    "DailyAssetSummaryRecord",
     "PlayerDatabase",
     "MAX_FIFO_RECORDS",
+    "MAX_ASSET_TRANSACTION_RECORDS",
     # 异步写入流水线
     "StorageTask",
     "StorageWorker",
@@ -74,6 +81,7 @@ __all__ = [
     "ModuleStateRepository",
     "BattleRecordRepository",
     "AuditLogRepository",
+    "AssetRepository",
     "GameStorage",
     # 事件总线持久化切面
     "SqliteStorageSubscriber",

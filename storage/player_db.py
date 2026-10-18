@@ -107,6 +107,46 @@ class AuditLogRecord:
     id: Optional[int] = None
 
 
+@dataclass
+class AssetTransactionRecord:
+    """元宝与铜钱资产收支流水实体
+
+    @author Ateng
+    @since 2026-10-19
+    """
+
+    asset_type: str  # 'coin' | 'ingot'
+    change_type: str  # 'income' | 'expense'
+    amount: int
+    balance_after: int
+    reason: str
+    created_at: float = field(default_factory=time.time)
+    id: Optional[int] = None
+
+
+@dataclass
+class DailyAssetSummaryRecord:
+    """每日资产汇总财务实体
+
+    @author Ateng
+    @since 2026-10-19
+    """
+
+    stat_date: str  # 'YYYY-MM-DD'
+    opening_coins: int = 0
+    closing_coins: int = 0
+    coins_income: int = 0
+    coins_expense: int = 0
+    opening_ingots: int = 0
+    closing_ingots: int = 0
+    ingots_income: int = 0
+    ingots_expense: int = 0
+    updated_at: float = field(default_factory=time.time)
+
+
+MAX_ASSET_TRANSACTION_RECORDS = 2000
+
+
 class PlayerDatabase:
     """角色私有 SQLite 数据库引擎
 
@@ -237,6 +277,41 @@ class PlayerDatabase:
                     """
                 )
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_created_at ON tb_audit_log(created_at)")
+
+                # 7. 元宝与铜钱资产收支流水明细表 (FIFO 滚动淘汰上限 2,000)
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS tb_asset_transaction (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        asset_type TEXT NOT NULL,
+                        change_type TEXT NOT NULL,
+                        amount INTEGER NOT NULL,
+                        balance_after INTEGER NOT NULL,
+                        reason TEXT NOT NULL,
+                        created_at REAL NOT NULL
+                    )
+                    """
+                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_tx_created_at ON tb_asset_transaction(created_at)")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_tx_type ON tb_asset_transaction(asset_type)")
+
+                # 8. 每日资产汇总表 (永久保留，按自然日聚合收支与期初/期末)
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS tb_daily_asset_summary (
+                        stat_date TEXT PRIMARY KEY,
+                        opening_coins INTEGER NOT NULL DEFAULT 0,
+                        closing_coins INTEGER NOT NULL DEFAULT 0,
+                        coins_income INTEGER NOT NULL DEFAULT 0,
+                        coins_expense INTEGER NOT NULL DEFAULT 0,
+                        opening_ingots INTEGER NOT NULL DEFAULT 0,
+                        closing_ingots INTEGER NOT NULL DEFAULT 0,
+                        ingots_income INTEGER NOT NULL DEFAULT 0,
+                        ingots_expense INTEGER NOT NULL DEFAULT 0,
+                        updated_at REAL NOT NULL
+                    )
+                    """
+                )
         finally:
             conn.close()
 
@@ -490,3 +565,293 @@ class PlayerDatabase:
                 )
                 for r in cursor.fetchall()
             ]
+
+    def record_asset_transaction(
+        self,
+        rec: AssetTransactionRecord,
+        max_records: int = MAX_ASSET_TRANSACTION_RECORDS,
+    ) -> None:
+        """记录一条资产收支流水，执行 FIFO 淘汰并即时增量更新每日汇总表 (Stream-driven Upsert)
+
+        Args:
+            rec: 资产收支流水实体。
+            max_records: 明细表最大保留条数 (FIFO 淘汰门槛)。
+        """
+        stat_date = time.strftime("%Y-%m-%d", time.localtime(rec.created_at))
+        with self.connect() as conn:
+            with conn:
+                # 1. 写入明细流水表
+                cursor = conn.execute(
+                    """
+                    INSERT INTO tb_asset_transaction (asset_type, change_type, amount, balance_after, reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (rec.asset_type, rec.change_type, rec.amount, rec.balance_after, rec.reason, rec.created_at),
+                )
+                rec.id = cursor.lastrowid
+
+                # 2. 明细流水表 FIFO 自动滚动淘汰
+                conn.execute(
+                    """
+                    DELETE FROM tb_asset_transaction
+                    WHERE id NOT IN (
+                        SELECT id FROM tb_asset_transaction ORDER BY id DESC LIMIT ?
+                    )
+                    """,
+                    (max_records,),
+                )
+
+                # 3. 每日资产汇总表增量累加与期末结余刷新
+                row = conn.execute(
+                    "SELECT * FROM tb_daily_asset_summary WHERE stat_date = ?", (stat_date,)
+                ).fetchone()
+
+                if row is None:
+                    # 尝试继承前序最近一天的期末结余作为期初基准
+                    prev_row = conn.execute(
+                        "SELECT closing_coins, closing_ingots FROM tb_daily_asset_summary WHERE stat_date < ? ORDER BY stat_date DESC LIMIT 1",
+                        (stat_date,),
+                    ).fetchone()
+
+                    # 读取当前全量画像兜底
+                    prof_row = conn.execute(
+                        "SELECT coins, ingots FROM tb_player_profile WHERE player_id = ?",
+                        (self.player_id,),
+                    ).fetchone()
+                    fallback_coins = prof_row["coins"] if prof_row else 0
+                    fallback_ingots = prof_row["ingots"] if prof_row else 0
+
+                    base_coins = prev_row["closing_coins"] if prev_row else fallback_coins
+                    base_ingots = prev_row["closing_ingots"] if prev_row else fallback_ingots
+
+                    if rec.asset_type == "coin":
+                        op_coins = (
+                            rec.balance_after - rec.amount
+                            if rec.change_type == "income"
+                            else rec.balance_after + rec.amount
+                        )
+                        cl_coins = rec.balance_after
+                        c_in = rec.amount if rec.change_type == "income" else 0
+                        c_ex = rec.amount if rec.change_type == "expense" else 0
+                        op_ingots = base_ingots
+                        cl_ingots = base_ingots
+                        i_in = 0
+                        i_ex = 0
+                    else:
+                        op_ingots = (
+                            rec.balance_after - rec.amount
+                            if rec.change_type == "income"
+                            else rec.balance_after + rec.amount
+                        )
+                        cl_ingots = rec.balance_after
+                        i_in = rec.amount if rec.change_type == "income" else 0
+                        i_ex = rec.amount if rec.change_type == "expense" else 0
+                        op_coins = base_coins
+                        cl_coins = base_coins
+                        c_in = 0
+                        c_ex = 0
+
+                    conn.execute(
+                        """
+                        INSERT INTO tb_daily_asset_summary (
+                            stat_date, opening_coins, closing_coins, coins_income, coins_expense,
+                            opening_ingots, closing_ingots, ingots_income, ingots_expense, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (stat_date, op_coins, cl_coins, c_in, c_ex, op_ingots, cl_ingots, i_in, i_ex, rec.created_at),
+                    )
+                else:
+                    if rec.asset_type == "coin":
+                        c_in_delta = rec.amount if rec.change_type == "income" else 0
+                        c_ex_delta = rec.amount if rec.change_type == "expense" else 0
+                        if (
+                            row["opening_coins"] == 0
+                            and row["closing_coins"] == 0
+                            and row["coins_income"] == 0
+                            and row["coins_expense"] == 0
+                        ):
+                            op_coin_val = (
+                                rec.balance_after - rec.amount
+                                if rec.change_type == "income"
+                                else rec.balance_after + rec.amount
+                            )
+                            conn.execute(
+                                """
+                                UPDATE tb_daily_asset_summary
+                                SET opening_coins = ?,
+                                    closing_coins = ?,
+                                    coins_income = coins_income + ?,
+                                    coins_expense = coins_expense + ?,
+                                    updated_at = ?
+                                WHERE stat_date = ?
+                                """,
+                                (op_coin_val, rec.balance_after, c_in_delta, c_ex_delta, rec.created_at, stat_date),
+                            )
+                        else:
+                            conn.execute(
+                                """
+                                UPDATE tb_daily_asset_summary
+                                SET closing_coins = ?,
+                                    coins_income = coins_income + ?,
+                                    coins_expense = coins_expense + ?,
+                                    updated_at = ?
+                                WHERE stat_date = ?
+                                """,
+                                (rec.balance_after, c_in_delta, c_ex_delta, rec.created_at, stat_date),
+                            )
+                    else:
+                        i_in_delta = rec.amount if rec.change_type == "income" else 0
+                        i_ex_delta = rec.amount if rec.change_type == "expense" else 0
+                        if (
+                            row["opening_ingots"] == 0
+                            and row["closing_ingots"] == 0
+                            and row["ingots_income"] == 0
+                            and row["ingots_expense"] == 0
+                        ):
+                            op_ingot_val = (
+                                rec.balance_after - rec.amount
+                                if rec.change_type == "income"
+                                else rec.balance_after + rec.amount
+                            )
+                            conn.execute(
+                                """
+                                UPDATE tb_daily_asset_summary
+                                SET opening_ingots = ?,
+                                    closing_ingots = ?,
+                                    ingots_income = ingots_income + ?,
+                                    ingots_expense = ingots_expense + ?,
+                                    updated_at = ?
+                                WHERE stat_date = ?
+                                """,
+                                (op_ingot_val, rec.balance_after, i_in_delta, i_ex_delta, rec.created_at, stat_date),
+                            )
+                        else:
+                            conn.execute(
+                                """
+                                UPDATE tb_daily_asset_summary
+                                SET closing_ingots = ?,
+                                    ingots_income = ingots_income + ?,
+                                    ingots_expense = ingots_expense + ?,
+                                    updated_at = ?
+                                WHERE stat_date = ?
+                                """,
+                                (rec.balance_after, i_in_delta, i_ex_delta, rec.created_at, stat_date),
+                            )
+
+    def get_recent_asset_transactions(
+        self,
+        limit: int = 50,
+        asset_type: Optional[str] = None,
+        stat_date: Optional[str] = None,
+    ) -> List[AssetTransactionRecord]:
+        """获取最近资产收支流水明细
+
+        Args:
+            limit: 最大返回条数。
+            asset_type: 可选币种过滤 ('coin' | 'ingot')。
+            stat_date: 可选自然日过滤 ('YYYY-MM-DD')。
+
+        Returns:
+            资产流水记录列表 (按时间降序)。
+        """
+        sql = "SELECT id, asset_type, change_type, amount, balance_after, reason, created_at FROM tb_asset_transaction WHERE 1=1"
+        params: List[Any] = []
+        if asset_type:
+            sql += " AND asset_type = ?"
+            params.append(asset_type)
+        if stat_date:
+            try:
+                start_ts = time.mktime(time.strptime(f"{stat_date} 00:00:00", "%Y-%m-%d %H:%M:%S"))
+                end_ts = start_ts + 86400.0
+                sql += " AND created_at >= ? AND created_at < ?"
+                params.extend([start_ts, end_ts])
+            except (ValueError, TypeError):
+                pass
+
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+
+        with self.connect() as conn:
+            cursor = conn.execute(sql, tuple(params))
+            return [
+                AssetTransactionRecord(
+                    id=r["id"],
+                    asset_type=r["asset_type"],
+                    change_type=r["change_type"],
+                    amount=r["amount"],
+                    balance_after=r["balance_after"],
+                    reason=r["reason"],
+                    created_at=r["created_at"],
+                )
+                for r in cursor.fetchall()
+            ]
+
+    def get_daily_asset_summaries(self, days: int = 7) -> List[DailyAssetSummaryRecord]:
+        """获取最近 N 日的每日资产汇总 (按日期升序排列，便于前端走势图绘制)
+
+        Args:
+            days: 历史天数。
+
+        Returns:
+            每日资产汇总列表 (按日期升序)。
+        """
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                SELECT stat_date, opening_coins, closing_coins, coins_income, coins_expense,
+                       opening_ingots, closing_ingots, ingots_income, ingots_expense, updated_at
+                FROM tb_daily_asset_summary
+                ORDER BY stat_date DESC LIMIT ?
+                """,
+                (days,),
+            )
+            rows = cursor.fetchall()
+            records = [
+                DailyAssetSummaryRecord(
+                    stat_date=r["stat_date"],
+                    opening_coins=r["opening_coins"],
+                    closing_coins=r["closing_coins"],
+                    coins_income=r["coins_income"],
+                    coins_expense=r["coins_expense"],
+                    opening_ingots=r["opening_ingots"],
+                    closing_ingots=r["closing_ingots"],
+                    ingots_income=r["ingots_income"],
+                    ingots_expense=r["ingots_expense"],
+                    updated_at=r["updated_at"],
+                )
+                for r in rows
+            ]
+            records.reverse()
+            return records
+
+    def get_today_asset_summary(self) -> Optional[DailyAssetSummaryRecord]:
+        """获取当天的每日资产汇总快照
+
+        Returns:
+            今日汇总实体，若今日尚无收支变动则返回 None。
+        """
+        today_str = time.strftime("%Y-%m-%d")
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT stat_date, opening_coins, closing_coins, coins_income, coins_expense,
+                       opening_ingots, closing_ingots, ingots_income, ingots_expense, updated_at
+                FROM tb_daily_asset_summary WHERE stat_date = ?
+                """,
+                (today_str,),
+            ).fetchone()
+            if row is None:
+                return None
+            return DailyAssetSummaryRecord(
+                stat_date=row["stat_date"],
+                opening_coins=row["opening_coins"],
+                closing_coins=row["closing_coins"],
+                coins_income=row["coins_income"],
+                coins_expense=row["coins_expense"],
+                opening_ingots=row["opening_ingots"],
+                closing_ingots=row["closing_ingots"],
+                ingots_income=row["ingots_income"],
+                ingots_expense=row["ingots_expense"],
+                updated_at=row["updated_at"],
+            )
+

@@ -57,6 +57,7 @@ class GameContext:
         self.player = PlayerState()
         self.town = TownState()
         self.extra_props: Dict[str, Any] = {}
+        self.active_task_name: Optional[str] = None
         self._connected: bool = False
         self._connection_start_time: float = 0.0
 
@@ -157,4 +158,12 @@ class GameContext:
         """更新玩家 VIP 等级"""
         if vip_level >= 0:
             self.player.vip_level = vip_level
+
+    def set_active_task(self, name: Optional[str]) -> None:
+        """设置当前正在调度的自动化任务名称"""
+        self.active_task_name = name
+
+    def clear_active_task(self) -> None:
+        """清理当前活跃任务标识"""
+        self.active_task_name = None
 

@@ -10,8 +10,10 @@
 
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
+from core.context import GameContext
 from core.events import EventBus
 from protocol.contracts.mod_13_farm import FarmGetFarmlandinfoListResp
 from protocol.contracts.mod_2_item import ItemGetAllPlayerItemInfosResp
@@ -25,6 +27,7 @@ from protocol.messages.player import (
 )
 from protocol.messages.routine import FarmHarvestResp
 from storage.player_db import (
+    AssetTransactionRecord,
     AuditLogRecord,
     BattleRecord,
     InventoryItemRecord,
@@ -35,6 +38,57 @@ from storage.player_db import (
 from storage.worker import StorageWorker
 
 logger = logging.getLogger(__name__)
+
+TASK_REASON_MAP: Dict[str, str] = {
+    "signin": "每日签到",
+    "money_tree": "招财神符",
+    "worship": "帮派祭神",
+    "faction_roll": "帮派吉星掷骰",
+    "lucky_star": "吉星高照",
+    "farm": "仙府药园收获",
+    "peach_pet": "摘仙桃与神龙喂养",
+    "traders": "喜从天降/通商",
+    "fishing": "深海捕鱼",
+    "fish": "深海捕鱼",
+    "tower": "六道轮回塔",
+    "six_paths_tower": "六道轮回塔",
+    "fate": "猎命",
+    "take_bible": "西天取经/拦截",
+    "travel": "仙履奇缘",
+    "travel_event": "仙履奇缘",
+    "item_clean": "杂物变卖/清理",
+    "clean": "杂物变卖/清理",
+    "hero_mission": "精英副本扫荡",
+    "normal_mission": "普通副本扫荡",
+    "sweep": "普通副本扫荡",
+    "multi_mission": "多人副本/七星封魔",
+    "seal_satan": "七星封魔",
+    "sport": "竞技场挑战",
+    "super_sport": "竞技场挑战",
+    "arena": "竞技场挑战",
+    "boss": "世界Boss挑战",
+    "world_boss": "世界Boss挑战",
+    "online_gift": "在线礼包领取",
+    "email": "系统邮件领取",
+    "mail": "系统邮件领取",
+    "touch_stone": "点金石",
+    "ask_fairy": "仙道问灵",
+    "weekend": "周末狂欢抽奖",
+    "weekend_revelry": "周末狂欢抽奖",
+    "assistant": "小助手活跃度宝箱",
+    "practice": "城镇练功收益",
+    "hunt_demon": "猎妖",
+    "five_elements": "五行清理",
+    "five_fu": "五福临门",
+    "nimbus": "聚灵",
+    "link_fate": "缘魂宝箱开启",
+    "home": "家园奖励收取",
+    "take_award": "每日领奖总管",
+    "release_welfare": "版本更新福利",
+    "union_worship": "仙盟上香",
+    "memory_zone": "回忆之境",
+}
+
 
 
 class SqliteStorageSubscriber:
@@ -49,10 +103,12 @@ class SqliteStorageSubscriber:
         worker: StorageWorker,
         player_db: PlayerDatabase,
         player_id: int = 0,
+        context: Optional[GameContext] = None,
     ) -> None:
         self.worker = worker
         self.player_db = player_db
         self.player_id = player_id or player_db.player_id
+        self.context = context
 
     def attach_to_event_bus(self, event_bus: EventBus) -> None:
         """挂载订阅器至目标事件总线
@@ -93,6 +149,36 @@ class SqliteStorageSubscriber:
             resp = PlayerInfoResp.decode(payload)
             target_pid = resp.player_id if resp.player_id > 0 else self.player_id
 
+            # 1. 检测离线/外部微端手操导致的资产差额 (External Asset Change)
+            current = self.player_db.get_player_profile()
+            if current is not None:
+                if resp.coins != current.coins:
+                    coin_delta = resp.coins - current.coins
+                    tx_coin = AssetTransactionRecord(
+                        asset_type="coin",
+                        change_type="income" if coin_delta > 0 else "expense",
+                        amount=abs(coin_delta),
+                        balance_after=resp.coins,
+                        reason="微端/外部变动",
+                        created_at=time.time(),
+                    )
+                    self.worker.submit_asset_transaction(tx_coin)
+                    logger.info("切面已捕获上线微端铜钱差额: 当前=%d, 变动=%+d", resp.coins, coin_delta)
+
+                if resp.ingots != current.ingots:
+                    ingot_delta = resp.ingots - current.ingots
+                    tx_ingot = AssetTransactionRecord(
+                        asset_type="ingot",
+                        change_type="income" if ingot_delta > 0 else "expense",
+                        amount=abs(ingot_delta),
+                        balance_after=resp.ingots,
+                        reason="微端/外部变动",
+                        created_at=time.time(),
+                    )
+                    self.worker.submit_asset_transaction(tx_ingot)
+                    logger.info("切面已捕获上线微端元宝差额: 当前=%d, 变动=%+d", resp.ingots, ingot_delta)
+
+            # 2. 提交角色全量画像更新
             record = PlayerProfileRecord(
                 player_id=target_pid,
                 nickname=resp.nickname,
@@ -121,16 +207,46 @@ class SqliteStorageSubscriber:
             if current is None:
                 current = PlayerProfileRecord(player_id=self.player_id)
 
+            # 解析当前活跃任务原因标签
+            task_key = self.context.active_task_name if self.context else None
+            reason = TASK_REASON_MAP.get(task_key, f"自动化任务 ({task_key})") if task_key else "被动收益/系统同步"
+
             changed = False
             for prop_id, val in resp.updates.items():
                 if prop_id == 18:
                     current.level = int(val)
                     changed = True
                 elif prop_id == 19:
-                    current.ingots = int(val)
+                    new_ingots = int(val)
+                    if new_ingots != current.ingots:
+                        ingot_diff = new_ingots - current.ingots
+                        tx_ingot = AssetTransactionRecord(
+                            asset_type="ingot",
+                            change_type="income" if ingot_diff > 0 else "expense",
+                            amount=abs(ingot_diff),
+                            balance_after=new_ingots,
+                            reason=reason,
+                            created_at=time.time(),
+                        )
+                        self.worker.submit_asset_transaction(tx_ingot)
+                        logger.info("切面记录元宝收支流水: %+d (余额 %d, 来源: %s)", ingot_diff, new_ingots, reason)
+                    current.ingots = new_ingots
                     changed = True
                 elif prop_id == 20:
-                    current.coins = int(val)
+                    new_coins = int(val)
+                    if new_coins != current.coins:
+                        coin_diff = new_coins - current.coins
+                        tx_coin = AssetTransactionRecord(
+                            asset_type="coin",
+                            change_type="income" if coin_diff > 0 else "expense",
+                            amount=abs(coin_diff),
+                            balance_after=new_coins,
+                            reason=reason,
+                            created_at=time.time(),
+                        )
+                        self.worker.submit_asset_transaction(tx_coin)
+                        logger.info("切面记录铜钱收支流水: %+d (余额 %d, 来源: %s)", coin_diff, new_coins, reason)
+                    current.coins = new_coins
                     changed = True
                 elif prop_id in (23, 77):
                     current.power = int(val)

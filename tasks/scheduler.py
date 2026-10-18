@@ -90,6 +90,7 @@ class TaskScheduler:
 
     async def _run_single_task(self, task: BaseTask) -> None:
         """执行单次任务"""
+        self.context.set_active_task(task.name)
         try:
             logger.info("开始执行前置任务: %s", task.name)
             res = await task.execute(self.client, self.context)
@@ -99,6 +100,8 @@ class TaskScheduler:
                 logger.warning("任务未成功 [%s] 状态=%s: %s", task.name, res.status.value, res.message)
         except Exception as exc:
             logger.error("单次任务未捕获异常 [%s]: %s", task.name, exc)
+        finally:
+            self.context.clear_active_task()
 
     async def _periodic_loop(self, task: BaseTask) -> None:
         """周期任务循环调度"""

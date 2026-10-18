@@ -24,6 +24,8 @@ from storage.player_db import (
     ModuleStateRecord,
     BattleRecord,
     AuditLogRecord,
+    AssetTransactionRecord,
+    DailyAssetSummaryRecord,
 )
 from storage.worker import StorageWorker, StorageTask
 
@@ -44,7 +46,7 @@ class TestPlayerDatabaseAndWorker(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_01_database_init_and_wal_mode(self) -> None:
-        """测试角色私有库初始化并验证 WAL 模式与 5 张核心表"""
+        """测试角色私有库初始化并验证 WAL 模式与核心表"""
         self.assertTrue(os.path.exists(self.db.db_path))
 
         with self.db.connect() as conn:
@@ -52,7 +54,7 @@ class TestPlayerDatabaseAndWorker(unittest.TestCase):
             mode = conn.execute("PRAGMA journal_mode;").fetchone()[0]
             self.assertEqual(mode.lower(), "wal")
 
-            # 2. 验证 5 张核心表存在
+            # 2. 验证 7 张核心表存在
             tables = [
                 r[0]
                 for r in conn.execute(
@@ -64,6 +66,8 @@ class TestPlayerDatabaseAndWorker(unittest.TestCase):
             self.assertIn("tb_module_state", tables)
             self.assertIn("tb_battle_records", tables)
             self.assertIn("tb_audit_log", tables)
+            self.assertIn("tb_asset_transaction", tables)
+            self.assertIn("tb_daily_asset_summary", tables)
 
     def test_02_player_profile_upsert_and_query(self) -> None:
         """测试角色画像属性持久化与覆盖更新"""
@@ -298,6 +302,122 @@ class TestPlayerDatabaseAndWorker(unittest.TestCase):
         all_battles = self.db.get_recent_battle_records(limit=100)
         self.assertEqual(len(all_battles), write_count)
 
+    def test_09_asset_transaction_and_daily_summary(self) -> None:
+        """测试资产收支流水记录、FIFO 滚动淘汰及每日汇总实时增量更新"""
+        # 1. 初始查询应为空列表 / None
+        self.assertEqual(self.db.get_recent_asset_transactions(), [])
+        self.assertIsNone(self.db.get_today_asset_summary())
+        self.assertEqual(self.db.get_daily_asset_summaries(days=7), [])
+
+        # 2. 插入铜钱收入流水
+        tx1 = AssetTransactionRecord(
+            asset_type="coin",
+            change_type="income",
+            amount=50000,
+            balance_after=150000,
+            reason="仙府药园收获",
+            created_at=time.time(),
+        )
+        self.db.record_asset_transaction(tx1)
+
+        # 验证明细
+        txs = self.db.get_recent_asset_transactions(limit=10)
+        self.assertEqual(len(txs), 1)
+        self.assertEqual(txs[0].asset_type, "coin")
+        self.assertEqual(txs[0].amount, 50000)
+        self.assertEqual(txs[0].reason, "仙府药园收获")
+
+        # 验证今日汇总
+        today = self.db.get_today_asset_summary()
+        self.assertIsNotNone(today)
+        assert today is not None
+        self.assertEqual(today.opening_coins, 100000)  # 150000 - 50000
+        self.assertEqual(today.closing_coins, 150000)
+        self.assertEqual(today.coins_income, 50000)
+        self.assertEqual(today.coins_expense, 0)
+
+        # 3. 插入铜钱支出流水
+        tx2 = AssetTransactionRecord(
+            asset_type="coin",
+            change_type="expense",
+            amount=20000,
+            balance_after=130000,
+            reason="杂物变卖/清理",
+            created_at=time.time() + 1,
+        )
+        self.db.record_asset_transaction(tx2)
+
+        # 4. 插入元宝支出流水
+        tx3 = AssetTransactionRecord(
+            asset_type="ingot",
+            change_type="expense",
+            amount=50,
+            balance_after=450,
+            reason="微端/外部变动",
+            created_at=time.time() + 2,
+        )
+        self.db.record_asset_transaction(tx3)
+
+        # 验证汇总增量累加
+        today2 = self.db.get_today_asset_summary()
+        self.assertIsNotNone(today2)
+        assert today2 is not None
+        self.assertEqual(today2.closing_coins, 130000)
+        self.assertEqual(today2.coins_income, 50000)
+        self.assertEqual(today2.coins_expense, 20000)
+        self.assertEqual(today2.opening_ingots, 500)  # 450 + 50
+        self.assertEqual(today2.closing_ingots, 450)
+        self.assertEqual(today2.ingots_income, 0)
+        self.assertEqual(today2.ingots_expense, 50)
+
+        # 5. 测试币种过滤与条数限制
+        coin_txs = self.db.get_recent_asset_transactions(asset_type="coin")
+        self.assertEqual(len(coin_txs), 2)
+        ingot_txs = self.db.get_recent_asset_transactions(asset_type="ingot")
+        self.assertEqual(len(ingot_txs), 1)
+
+        # 6. 测试 FIFO 滚动淘汰 (设置 max_records=3)
+        for i in range(5):
+            self.db.record_asset_transaction(
+                AssetTransactionRecord(
+                    asset_type="coin",
+                    change_type="income",
+                    amount=1000 * (i + 1),
+                    balance_after=130000 + 1000 * (i + 1),
+                    reason=f"批量测试 {i}",
+                    created_at=time.time() + 10 + i,
+                ),
+                max_records=3,
+            )
+        retained = self.db.get_recent_asset_transactions(limit=10)
+        self.assertEqual(len(retained), 3)
+
+        # 7. 测试按天汇总列表返回
+        summaries = self.db.get_daily_asset_summaries(days=7)
+        self.assertGreaterEqual(len(summaries), 1)
+
+    def test_10_worker_asset_transaction(self) -> None:
+        """测试 StorageWorker 异步写入资产流水并落盘"""
+        worker = StorageWorker(self.db, batch_size=10, flush_interval=0.01)
+        worker.start()
+
+        tx = AssetTransactionRecord(
+            asset_type="coin",
+            change_type="income",
+            amount=88888,
+            balance_after=888888,
+            reason="招财神符",
+        )
+        worker.submit_asset_transaction(tx)
+        worker.flush()
+        worker.stop()
+
+        records = self.db.get_recent_asset_transactions(limit=5)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].reason, "招财神符")
+        self.assertEqual(records[0].amount, 88888)
+
 
 if __name__ == "__main__":
     unittest.main()
+

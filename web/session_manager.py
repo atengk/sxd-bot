@@ -293,7 +293,11 @@ class AccountSessionManager:
 
             from tasks.routine.item_clean import ItemCleanTask
             task = ItemCleanTask(target_empty=target_empty, force_all=force_all)
-            res = await task.execute(client, ctx)
+            ctx.set_active_task("item_clean")
+            try:
+                res = await task.execute(client, ctx)
+            finally:
+                ctx.clear_active_task()
 
             # 触发最新态势感知
             pdb = self.get_player_db(alias)
@@ -334,7 +338,11 @@ class AccountSessionManager:
 
             from tasks.routine.item_clean import ItemCleanTask
             task = ItemCleanTask(target_empty=100, force_all=True, use_only=True)
-            res = await task.execute(client, ctx)
+            ctx.set_active_task("item_clean")
+            try:
+                res = await task.execute(client, ctx)
+            finally:
+                ctx.clear_active_task()
 
             # 触发最新态势感知
             pdb = self.get_player_db(alias)
@@ -1156,7 +1164,11 @@ class AccountSessionManager:
                             task_instance = builder()
                             if r == "farm":
                                 task_instance.plant_type = getattr(cfg, "farm_plant_type", "auto")
-                            res = await task_instance.execute(client, ctx)
+                            ctx.set_active_task(r)
+                            try:
+                                res = await task_instance.execute(client, ctx)
+                            finally:
+                                ctx.clear_active_task()
                             step_status = "success" if res.is_success else "failed"
                             step_msg = f"子任务 [{r}] 执行{'成功' if res.is_success else '未完成'}: {res.message or '完成'}"
                             self.event_bus.publish(

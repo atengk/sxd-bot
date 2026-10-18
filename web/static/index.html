@@ -651,7 +651,7 @@
         <button @click="drawer.tab = 'assets'" :class="drawer.tab === 'assets' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">资产态势</button>
         <button @click="drawer.tab = 'assistant'" :class="drawer.tab === 'assistant' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">小助手进度</button>
         <button @click="drawer.tab = 'routines'" :class="drawer.tab === 'routines' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">35项日常独立配置</button>
-        <button @click="drawer.tab = 'audit'" :class="drawer.tab === 'audit' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">元宝审计图表</button>
+        <button @click="drawer.tab = 'audit'" :class="drawer.tab === 'audit' ? 'border-b-2 border-sky-500 text-sky-600 dark:text-sky-400 font-bold' : 'border-b-2 border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'" class="py-3 px-3.5 font-medium transition">资产流水与审计</button>
       </div>
 
       <!-- 抽屉内容视窗 -->
@@ -809,25 +809,140 @@
           </button>
         </div>
 
-        <!-- Tab 4: 元宝审计图表 (Audit) -->
+        <!-- Tab 4: 资产收支流水与元宝审计 (Audit & Transactions) -->
         <div v-show="drawer.tab === 'audit'" class="space-y-4">
+          <!-- 1. 近 7 日资产走势 -->
           <div class="themed-subcard p-4">
-            <p class="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-3">近 7 日铜钱与元宝资产走势 (SQLite 仓储)</p>
+            <div class="flex items-center justify-between mb-3">
+              <p class="text-xs font-semibold text-slate-700 dark:text-slate-300">近 7 日资产走势 (SQLite 仓储)</p>
+              <div class="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded text-[11px]">
+                <button @click="drawer.assetChartMode = 'coins'" :class="drawer.assetChartMode === 'coins' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 font-bold shadow-xs' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'" class="px-2 py-0.5 rounded transition">铜钱走势</button>
+                <button @click="drawer.assetChartMode = 'ingots'" :class="drawer.assetChartMode === 'ingots' ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 font-bold shadow-xs' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'" class="px-2 py-0.5 rounded transition">元宝走势</button>
+              </div>
+            </div>
             <div class="h-32 w-full flex items-end space-x-3 pt-4 border-b border-slate-200 dark:border-slate-800">
               <div v-for="(h, idx) in (drawer.auditLogs?.asset_history || [])" :key="idx" class="flex-1 flex flex-col items-center gap-1">
-                <div class="w-full rounded-t transition-all duration-300" :class="idx === (drawer.auditLogs.asset_history.length - 1) ? 'bg-sky-500 shadow-md shadow-sky-500/40' : 'bg-amber-500/80'" :style="{ height: getAssetBarHeight(h.coins) + '%' }" :title="`${h.date}: 铜钱 ${formatCoins(h.coins)}, 元宝 ${h.ingots}`"></div>
-                <span class="text-[10px]" :class="idx === (drawer.auditLogs.asset_history.length - 1) ? 'text-sky-600 dark:text-sky-400 font-bold' : 'text-slate-500 dark:text-slate-400'">{{ idx === (drawer.auditLogs.asset_history.length - 1) ? '今日' : h.date }}</span>
+                <div class="w-full rounded-t transition-all duration-300"
+                     :class="drawer.assetChartMode === 'coins' ? (idx === (drawer.auditLogs.asset_history.length - 1) ? 'bg-amber-500 shadow-md shadow-amber-500/40' : 'bg-amber-500/80') : (idx === (drawer.auditLogs.asset_history.length - 1) ? 'bg-sky-500 shadow-md shadow-sky-500/40' : 'bg-sky-500/80')"
+                     :style="{ height: getAssetBarHeight(drawer.assetChartMode === 'coins' ? h.coins : h.ingots, drawer.assetChartMode) + '%' }"
+                     :title="`${h.date}\n` + (drawer.assetChartMode === 'coins' ? `期末铜钱: ${formatCoins(h.coins)}\n今日收入: +${formatCoins(h.coins_income || 0)}\n今日支出: -${formatCoins(h.coins_expense || 0)}` : `期末元宝: ${h.ingots}\n今日收入: +${h.ingots_income || 0}\n今日支出: -${h.ingots_expense || 0}`)">
+                </div>
+                <span class="text-[10px]" :class="idx === (drawer.auditLogs.asset_history.length - 1) ? (drawer.assetChartMode === 'coins' ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-sky-600 dark:text-sky-400 font-bold') : 'text-slate-500 dark:text-slate-400'">{{ idx === (drawer.auditLogs.asset_history.length - 1) ? '今日' : h.date }}</span>
               </div>
             </div>
             <div class="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-2">
-              <span>初始: {{ formatCoins(drawer.auditLogs?.asset_history?.[0]?.coins) }}</span>
-              <span class="text-amber-600 dark:text-amber-300 font-bold">当前: {{ formatCoins(drawer.auditLogs?.asset_history?.[drawer.auditLogs?.asset_history?.length - 1]?.coins) }}</span>
+              <span v-if="drawer.assetChartMode === 'coins'">初始: {{ formatCoins(drawer.auditLogs?.asset_history?.[0]?.coins) }}</span>
+              <span v-else>初始: {{ (drawer.auditLogs?.asset_history?.[0]?.ingots || 0).toLocaleString() }} 元宝</span>
+              <span v-if="drawer.assetChartMode === 'coins'" class="text-amber-600 dark:text-amber-300 font-bold">当前: {{ formatCoins(drawer.auditLogs?.asset_history?.[drawer.auditLogs?.asset_history?.length - 1]?.coins) }}</span>
+              <span v-else class="text-sky-600 dark:text-sky-300 font-bold">当前: {{ (drawer.auditLogs?.asset_history?.[drawer.auditLogs?.asset_history?.length - 1]?.ingots || 0).toLocaleString() }} 元宝</span>
             </div>
           </div>
 
-          <div>
-            <h4 class="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">高危元宝消耗审计日志 (只读安全网)</h4>
-            <div class="p-3 themed-subcard text-xs space-y-2">
+          <!-- 2. 今日收支概览 KPI 卡片 -->
+          <div class="grid grid-cols-2 gap-3">
+            <!-- 今日铜钱收支 -->
+            <div class="p-3 themed-subcard rounded-lg space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-medium text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                  <span>🪙 今日铜钱收支</span>
+                </span>
+                <span class="text-[10px] text-slate-400 font-mono">{{ todaySummary.stat_date || '--' }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 pt-1 text-xs">
+                <div class="bg-white/60 dark:bg-slate-900/60 p-2 rounded border border-emerald-500/20">
+                  <span class="text-[10px] text-slate-400 block">今日收入</span>
+                  <span class="font-bold text-emerald-600 dark:text-emerald-400 font-mono">+{{ formatCoins(todaySummary.coins_income) }}</span>
+                </div>
+                <div class="bg-white/60 dark:bg-slate-900/60 p-2 rounded border border-rose-500/20">
+                  <span class="text-[10px] text-slate-400 block">今日支出</span>
+                  <span class="font-bold text-rose-600 dark:text-rose-400 font-mono">-{{ formatCoins(todaySummary.coins_expense) }}</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+                <span>期初: {{ formatCoins(todaySummary.opening_coins) }}</span>
+                <span>结余: <strong class="text-slate-700 dark:text-slate-200">{{ formatCoins(todaySummary.closing_coins) }}</strong></span>
+              </div>
+            </div>
+
+            <!-- 今日元宝收支 -->
+            <div class="p-3 themed-subcard rounded-lg space-y-1.5">
+              <div class="flex items-center justify-between text-xs">
+                <span class="font-medium text-sky-600 dark:text-sky-400 flex items-center gap-1">
+                  <span>💎 今日元宝收支</span>
+                </span>
+                <span class="text-[10px] text-slate-400 font-mono">{{ todaySummary.stat_date || '--' }}</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2 pt-1 text-xs">
+                <div class="bg-white/60 dark:bg-slate-900/60 p-2 rounded border border-emerald-500/20">
+                  <span class="text-[10px] text-slate-400 block">今日收入</span>
+                  <span class="font-bold text-emerald-600 dark:text-emerald-400 font-mono">+{{ (todaySummary.ingots_income || 0).toLocaleString() }}</span>
+                </div>
+                <div class="bg-white/60 dark:bg-slate-900/60 p-2 rounded border border-rose-500/20">
+                  <span class="text-[10px] text-slate-400 block">今日支出</span>
+                  <span class="font-bold text-rose-600 dark:text-rose-400 font-mono">-{{ (todaySummary.ingots_expense || 0).toLocaleString() }}</span>
+                </div>
+              </div>
+              <div class="flex justify-between items-center text-[10px] text-slate-400 pt-0.5">
+                <span>期初: {{ (todaySummary.opening_ingots || 0).toLocaleString() }}</span>
+                <span>结余: <strong class="text-slate-700 dark:text-slate-200">{{ (todaySummary.closing_ingots || 0).toLocaleString() }}</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 资产收支流水账本 -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <span>资产收支流水账本</span>
+                <span class="text-[10px] font-normal text-slate-400">展示最新 {{ drawer.assetTransactions?.transactions?.length || 0 }} 笔</span>
+              </h4>
+              <div class="flex items-center space-x-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded text-[11px]">
+                <button @click="setAssetFilter('all')" :class="drawer.assetFilter === 'all' ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 font-bold shadow-xs' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'" class="px-2 py-0.5 rounded transition">全部</button>
+                <button @click="setAssetFilter('coin')" :class="drawer.assetFilter === 'coin' ? 'bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 font-bold shadow-xs' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'" class="px-2 py-0.5 rounded transition">铜钱</button>
+                <button @click="setAssetFilter('ingot')" :class="drawer.assetFilter === 'ingot' ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 font-bold shadow-xs' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'" class="px-2 py-0.5 rounded transition">元宝</button>
+              </div>
+            </div>
+
+            <div class="p-3 themed-subcard text-xs space-y-1.5 max-h-72 overflow-y-auto custom-scroll">
+              <div class="flex items-center justify-between text-slate-400 text-[11px] pb-1 border-b border-slate-200 dark:border-slate-800 sticky top-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs z-10">
+                <span class="w-20">时间</span>
+                <span class="w-14 text-center">币种</span>
+                <span class="flex-1 px-2">业务归因/原因</span>
+                <span class="w-24 text-right">变动金额</span>
+                <span class="w-24 text-right">变动后结余</span>
+              </div>
+              <div v-if="!drawer.assetTransactions?.transactions?.length" class="text-center py-6 text-slate-400 dark:text-slate-500 text-xs">
+                暂无资产变动流水记录 (收支平衡，静止中)
+              </div>
+              <div v-else v-for="tx in drawer.assetTransactions.transactions" :key="tx.id" class="flex items-center justify-between text-slate-700 dark:text-slate-300 py-1.5 border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded px-1 transition-colors">
+                <span class="w-20 text-slate-400 dark:text-slate-500 font-mono text-[10px]">{{ formatTime(tx.created_at) }}</span>
+                <span class="w-14 text-center">
+                  <span v-if="tx.asset_type === 'coin'" class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium">铜钱</span>
+                  <span v-else class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20 font-medium">元宝</span>
+                </span>
+                <span class="flex-1 px-2 truncate font-medium text-slate-800 dark:text-slate-200 text-[11px]" :title="tx.reason">
+                  {{ tx.reason }}
+                </span>
+                <span class="w-24 text-right font-mono font-bold text-xs" :class="tx.change_type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'">
+                  {{ tx.change_type === 'income' ? '+' : '-' }}{{ tx.asset_type === 'coin' ? formatCoins(tx.amount) : tx.amount }}
+                </span>
+                <span class="w-24 text-right font-mono text-slate-500 dark:text-slate-400 text-[11px]">
+                  {{ tx.asset_type === 'coin' ? formatCoins(tx.balance_after) : tx.balance_after }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4. 高危元宝消耗审计日志 (只读安全网) -->
+          <details class="group themed-subcard p-3 rounded-lg text-xs" :open="false">
+            <summary class="font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between cursor-pointer select-none">
+              <div class="flex items-center space-x-2">
+                <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                <span>高危元宝消耗审计日志 (只读安全网)</span>
+              </div>
+              <span class="text-[11px] text-slate-400 font-mono">共 {{ drawer.auditLogs?.audit_records?.length || 0 }} 条拦截记录</span>
+            </summary>
+            <div class="mt-3 pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
               <div class="flex items-center justify-between text-slate-400 text-[11px] pb-1 border-b border-slate-200 dark:border-slate-800">
                 <span class="w-24">时间</span>
                 <span class="flex-1 px-2">动作/行为</span>
@@ -844,7 +959,7 @@
                 <span class="w-20 text-right text-[11px]" :class="r.allow_ingot === 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">{{ r.allow_ingot === 0 ? '零元宝拦截' : '配额允许' }}</span>
               </div>
             </div>
-          </div>
+          </details>
         </div>
 
       </div>
@@ -1141,6 +1256,14 @@
             enabled_routines: [],
           },
           auditLogs: null,
+          assetFilter: 'all',
+          assetChartMode: 'coins',
+          assetTransactions: null,
+        });
+
+        // 今日收支概览计算属性
+        const todaySummary = computed(() => {
+          return drawer.assetTransactions?.today_summary || drawer.auditLogs?.today_summary || {};
         });
 
         // 明暗双模主题切换
@@ -1271,10 +1394,11 @@
           return cells;
         });
 
-        function getAssetBarHeight(coins) {
+        function getAssetBarHeight(val, mode = 'coins') {
           const history = drawer.auditLogs?.asset_history || [];
-          const max = Math.max(...history.map(h => h.coins), 1);
-          return Math.max(15, Math.round((coins / max) * 100));
+          const field = mode === 'ingots' ? 'ingots' : 'coins';
+          const max = Math.max(...history.map(h => h[field] || 0), 1);
+          return Math.max(12, Math.round(((val || 0) / max) * 100));
         }
 
         // 日志打印辅助 (智能底部吸附)
@@ -1821,6 +1945,7 @@
               loadDrawerTelemetry(alias),
               loadDrawerAssistant(alias),
               loadDrawerAuditLogs(alias),
+              loadDrawerAssetTransactions(alias, drawer.assetFilter),
             ]);
           } finally {
             drawer.loading = false;
@@ -1842,6 +1967,7 @@
               loadDrawerTelemetry(drawer.alias),
               loadDrawerAssistant(drawer.alias),
               loadDrawerAuditLogs(drawer.alias),
+              loadDrawerAssetTransactions(drawer.alias, drawer.assetFilter),
             ]);
           } finally {
             drawer.loading = false;
@@ -1904,6 +2030,25 @@
             if (!resp.ok) return;
             drawer.auditLogs = await resp.json();
           } catch (e) {}
+        }
+
+        async function loadDrawerAssetTransactions(alias, assetType = null) {
+          try {
+            let url = `/api/accounts/${encodeURIComponent(alias)}/asset-transactions?limit=100`;
+            if (assetType && assetType !== 'all') {
+              url += `&asset_type=${encodeURIComponent(assetType)}`;
+            }
+            const resp = await fetch(url, { headers: getAuthHeaders() });
+            if (!resp.ok) return;
+            drawer.assetTransactions = await resp.json();
+          } catch (e) {}
+        }
+
+        function setAssetFilter(type) {
+          drawer.assetFilter = type;
+          if (drawer.alias) {
+            loadDrawerAssetTransactions(drawer.alias, type);
+          }
         }
 
         // SSE 实时推流长连接
@@ -2090,10 +2235,13 @@
           totalIngotsFormatted,
           averageLivenessRate,
           drawerInventory100,
+          todaySummary,
           formatCoins,
           formatTime,
           formatProbeTime,
           getAssetBarHeight,
+          setAssetFilter,
+          loadDrawerAssetTransactions,
           clearLogs,
           simulateLogEntry,
           isUserAtBottom,

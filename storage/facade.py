@@ -21,6 +21,8 @@ from storage.player_db import (
     ModuleStateRecord,
     PlayerDatabase,
     PlayerProfileRecord,
+    AssetTransactionRecord,
+    DailyAssetSummaryRecord,
 )
 from storage.protocol_db import ProtocolDatabase, ProtocolRepository
 from storage.worker import StorageWorker
@@ -294,6 +296,47 @@ class AuditLogRepository:
             return int(row["cnt"]) if row else 0
 
 
+class AssetRepository:
+    """资产收支流水与每日汇总领域仓储
+
+    @author Ateng
+    @since 2026-10-19
+    """
+
+    def __init__(self, db: PlayerDatabase, worker: Optional[StorageWorker] = None) -> None:
+        self.db = db
+        self.worker = worker
+
+    def record_transaction(
+        self,
+        rec: AssetTransactionRecord,
+        async_write: bool = False,
+        max_records: int = 2000,
+    ) -> None:
+        """记录一条资产收支流水并增量更新每日汇总"""
+        if async_write and self.worker is not None:
+            self.worker.submit_asset_transaction(rec)
+        else:
+            self.db.record_asset_transaction(rec, max_records=max_records)
+
+    def get_recent_transactions(
+        self,
+        limit: int = 50,
+        asset_type: Optional[str] = None,
+        stat_date: Optional[str] = None,
+    ) -> List[AssetTransactionRecord]:
+        """获取最近资产收支流水"""
+        return self.db.get_recent_asset_transactions(limit=limit, asset_type=asset_type, stat_date=stat_date)
+
+    def get_daily_summaries(self, days: int = 7) -> List[DailyAssetSummaryRecord]:
+        """获取最近 N 日的每日资产汇总"""
+        return self.db.get_daily_asset_summaries(days=days)
+
+    def get_today_summary(self) -> Optional[DailyAssetSummaryRecord]:
+        """获取今日资产收支汇总"""
+        return self.db.get_today_asset_summary()
+
+
 class GameStorage:
     """神仙道统一存储门面系统
 
@@ -336,6 +379,7 @@ class GameStorage:
         self.module_state = ModuleStateRepository(self.player_db, self.worker)
         self.battles = BattleRecordRepository(self.player_db, self.worker)
         self.audits = AuditLogRepository(self.player_db, self.worker)
+        self.assets = AssetRepository(self.player_db, self.worker)
 
         # 4. 按需启动后台写入线程
         if auto_start_worker:

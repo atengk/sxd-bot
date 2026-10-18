@@ -25,6 +25,7 @@ import shutil
 import tempfile
 import unittest
 
+from core.context import GameContext
 from core.events import EventBus
 from protocol.contracts.mod_13_farm import FarmGetFarmlandinfoListResp
 from protocol.contracts.mod_2_item import ItemGetAllPlayerItemInfosResp
@@ -39,6 +40,7 @@ from protocol.messages.player import (
 from protocol.messages.routine import FarmHarvestResp
 from protocol.packet import ByteArrayWriter
 from storage.facade import (
+    AssetRepository,
     AuditLogRepository,
     BattleRecordRepository,
     GameStorage,
@@ -47,6 +49,7 @@ from storage.facade import (
     PlayerRepository,
 )
 from storage.player_db import (
+    AssetTransactionRecord,
     AuditLogRecord,
     BattleRecord,
     InventoryItemRecord,
@@ -67,6 +70,7 @@ class TestStorageFacadeAndSubscriber(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp(prefix="sxd_test_facade_")
         self.server_id = 999
         self.player_id = 88888
+        self.context = GameContext()
         self.storage = GameStorage(
             server_id=self.server_id,
             player_id=self.player_id,
@@ -79,12 +83,46 @@ class TestStorageFacadeAndSubscriber(unittest.TestCase):
             worker=self.storage.worker,
             player_db=self.storage.player_db,
             player_id=self.player_id,
+            context=self.context,
         )
         self.subscriber.attach_to_event_bus(self.event_bus)
 
     def tearDown(self) -> None:
         self.storage.close()
         shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _encode_player_info(
+        self,
+        nickname: str = "太上仙人",
+        level: int = 90,
+        coins: int = 1000000,
+        ingots: int = 500,
+        power: int = 200,
+    ) -> bytes:
+        """辅助打包 Mod 0 Act 2 官方契约二进制报文"""
+        writer = ByteArrayWriter()
+        writer.write_utf(nickname)
+        writer.write_int32(level)
+        writer.write_int32(ingots)
+        writer.write_int64(coins)
+        writer.write_int64(10000)  # health
+        writer.write_int64(10000)  # max_health
+        writer.write_int32(power)
+        writer.write_int64(50000)  # exp
+        writer.write_int64(100000) # max_exp
+        writer.write_int32(1)      # town_map_id
+        for _ in range(4):
+            writer.write_int32(0)
+        writer.write_int32(0)      # vip_level
+        for _ in range(4):
+            writer.write_int32(0)
+        writer.write_int8(1)       # camp_id
+        writer.write_int32(0)      # townKey
+        writer.write_int32(0)      # fame
+        for _ in range(7):
+            writer.write_int32(0)
+        writer.write_int32(10)     # mission_key
+        return writer.to_bytes()
 
     def test_01_facade_structure_and_repositories(self) -> None:
         """测试 GameStorage 门面子仓储挂载与静态协议检索能力"""
@@ -93,6 +131,7 @@ class TestStorageFacadeAndSubscriber(unittest.TestCase):
         self.assertIsInstance(self.storage.module_state, ModuleStateRepository)
         self.assertIsInstance(self.storage.battles, BattleRecordRepository)
         self.assertIsInstance(self.storage.audits, AuditLogRepository)
+        self.assertIsInstance(self.storage.assets, AssetRepository)
 
         # 验证静态协议字典仓储已就绪
         modules = self.storage.protocol.list_modules()
@@ -381,6 +420,72 @@ class TestStorageFacadeAndSubscriber(unittest.TestCase):
         self.assertTrue(audits[0].allow_ingot)
         self.assertEqual(audits[1].action_name, "buy_challenge_times")
 
+    def test_09_subscriber_asset_transaction_and_offline_change(self) -> None:
+        """测试 Subscriber 捕获日常任务变动归因与上线微端差额记录"""
+        loop = asyncio.new_event_loop()
+        try:
+            async def emit_and_drain(mod: int, act: int, payload: bytes) -> None:
+                await self.event_bus.emit(mod, act, payload)
+                await asyncio.sleep(0.01)
+
+            # 1. 初始化角色上线基础画像
+            info_payload1 = self._encode_player_info(coins=1000000, ingots=500)
+            loop.run_until_complete(emit_and_drain(0, 2, info_payload1))
+            self.storage.flush()
+
+            # 2. 模拟任务执行上下文: farm
+            self.context.set_active_task("farm")
+            upd_coin = PlayerUpdatePlayerDataResp(
+                updates={20: 1080000}  # 铜钱增加 80,000
+            )
+            loop.run_until_complete(emit_and_drain(0, 3, upd_coin.encode_payload()))
+            self.context.clear_active_task()
+            self.storage.flush()
+
+            # 验证流水与归因
+            txs = self.storage.assets.get_recent_transactions(limit=10)
+            self.assertEqual(len(txs), 1)
+            self.assertEqual(txs[0].asset_type, "coin")
+            self.assertEqual(txs[0].change_type, "income")
+            self.assertEqual(txs[0].amount, 80000)
+            self.assertEqual(txs[0].balance_after, 1080000)
+            self.assertEqual(txs[0].reason, "仙府药园收获")
+
+            # 3. 模拟微端/外部变动 (例如微端离线消耗 50 元宝，并产出 20,000 铜钱)
+            info_payload2 = self._encode_player_info(coins=1100000, ingots=450)
+            loop.run_until_complete(emit_and_drain(0, 2, info_payload2))
+            self.storage.flush()
+
+            # 验证外部差额流水生成
+            all_txs = self.storage.assets.get_recent_transactions(limit=10)
+            self.assertEqual(len(all_txs), 3)
+
+            # 最新的两条为微端外部变动
+            external_txs = [t for t in all_txs if t.reason == "微端/外部变动"]
+            self.assertEqual(len(external_txs), 2)
+
+            ingot_tx = [t for t in external_txs if t.asset_type == "ingot"][0]
+            self.assertEqual(ingot_tx.change_type, "expense")
+            self.assertEqual(ingot_tx.amount, 50)
+            self.assertEqual(ingot_tx.balance_after, 450)
+
+            coin_tx = [t for t in external_txs if t.asset_type == "coin"][0]
+            self.assertEqual(coin_tx.change_type, "income")
+            self.assertEqual(coin_tx.amount, 20000)
+            self.assertEqual(coin_tx.balance_after, 1100000)
+
+            # 4. 验证今日汇总
+            today = self.storage.assets.get_today_summary()
+            self.assertIsNotNone(today)
+            assert today is not None
+            self.assertEqual(today.closing_coins, 1100000)
+            self.assertEqual(today.coins_income, 100000)  # 80000 + 20000
+            self.assertEqual(today.closing_ingots, 450)
+            self.assertEqual(today.ingots_expense, 50)
+        finally:
+            loop.close()
+
 
 if __name__ == "__main__":
     unittest.main()
+

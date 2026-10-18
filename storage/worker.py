@@ -20,6 +20,7 @@ from storage.player_db import (
     ModuleStateRecord,
     BattleRecord,
     AuditLogRecord,
+    AssetTransactionRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -99,6 +100,10 @@ class StorageWorker:
         """提交高危元宝操作审计流水任务"""
         self.submit(StorageTask(task_type="audit", data=log))
 
+    def submit_asset_transaction(self, record: AssetTransactionRecord) -> None:
+        """提交元宝与铜钱资产收支流水任务"""
+        self.submit(StorageTask(task_type="asset_tx", data=record))
+
     def submit_custom_action(self, action: Callable[[PlayerDatabase], None]) -> None:
         """提交自定义写数据库事务闭包"""
         self.submit(StorageTask(task_type="custom", data=action))
@@ -176,6 +181,8 @@ class StorageWorker:
                     self.db.add_battle_record(t.data)
                 elif t.task_type == "audit":
                     self.db.add_audit_log(t.data)
+                elif t.task_type == "asset_tx":
+                    self.db.record_asset_transaction(t.data)
                 elif t.task_type == "custom":
                     t.data(self.db)
             except Exception as exc:
