@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sxd-bot"
-version = "1.0.0"
+version = "1.1.0"
 description = "神仙道无头协议自动化工具 (SXD Bot)"
 readme = "README.md"
 requires-python = ">=3.10"
