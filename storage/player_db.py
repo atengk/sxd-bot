@@ -855,3 +855,44 @@ class PlayerDatabase:
                 updated_at=row["updated_at"],
             )
 
+    def save_daily_asset_summary(self, summary: DailyAssetSummaryRecord) -> None:
+        """保存或更新单日资产汇总快照 (支持期初结存初始化与增量修正)
+
+        Args:
+            summary: 每日资产汇总记录实体。
+        """
+        now = time.time()
+        with self.connect() as conn:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT INTO tb_daily_asset_summary (
+                        stat_date, opening_coins, closing_coins, coins_income, coins_expense,
+                        opening_ingots, closing_ingots, ingots_income, ingots_expense, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(stat_date) DO UPDATE SET
+                        opening_coins = CASE WHEN excluded.opening_coins > 0 THEN excluded.opening_coins ELSE tb_daily_asset_summary.opening_coins END,
+                        closing_coins = excluded.closing_coins,
+                        coins_income = excluded.coins_income,
+                        coins_expense = excluded.coins_expense,
+                        opening_ingots = CASE WHEN excluded.opening_ingots > 0 THEN excluded.opening_ingots ELSE tb_daily_asset_summary.opening_ingots END,
+                        closing_ingots = excluded.closing_ingots,
+                        ingots_income = excluded.ingots_income,
+                        ingots_expense = excluded.ingots_expense,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        summary.stat_date,
+                        summary.opening_coins,
+                        summary.closing_coins,
+                        summary.coins_income,
+                        summary.coins_expense,
+                        summary.opening_ingots,
+                        summary.closing_ingots,
+                        summary.ingots_income,
+                        summary.ingots_expense,
+                        now,
+                    ),
+                )
+
+

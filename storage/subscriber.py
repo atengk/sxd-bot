@@ -30,6 +30,7 @@ from storage.player_db import (
     AssetTransactionRecord,
     AuditLogRecord,
     BattleRecord,
+    DailyAssetSummaryRecord,
     InventoryItemRecord,
     ModuleStateRecord,
     PlayerDatabase,
@@ -151,7 +152,7 @@ class SqliteStorageSubscriber:
 
             # 1. 检测离线/外部微端手操导致的资产差额 (External Asset Change)
             current = self.player_db.get_player_profile()
-            if current is not None:
+            if current is not None and (current.coins > 0 or current.ingots > 0):
                 if resp.coins != current.coins:
                     coin_delta = resp.coins - current.coins
                     tx_coin = AssetTransactionRecord(
@@ -177,6 +178,19 @@ class SqliteStorageSubscriber:
                     )
                     self.worker.submit_asset_transaction(tx_ingot)
                     logger.info("切面已捕获上线微端元宝差额: 当前=%d, 变动=%+d", resp.ingots, ingot_delta)
+            else:
+                # 首次建档无基线 (Q2-A): 仅作为期初结余，不计流水，直接确保当日汇总期初就绪
+                today_summary = self.player_db.get_today_asset_summary()
+                if today_summary is None:
+                    init_summary = DailyAssetSummaryRecord(
+                        stat_date=time.strftime("%Y-%m-%d"),
+                        opening_coins=resp.coins,
+                        closing_coins=resp.coins,
+                        opening_ingots=resp.ingots,
+                        closing_ingots=resp.ingots,
+                    )
+                    self.player_db.save_daily_asset_summary(init_summary)
+                    logger.info("首次建档无基线，初始化今日资产期初结余: 铜钱=%d, 元宝=%d (不产生虚假流水)", resp.coins, resp.ingots)
 
             # 2. 提交角色全量画像更新
             record = PlayerProfileRecord(
@@ -204,6 +218,7 @@ class SqliteStorageSubscriber:
 
             # 读取当前库中最新角色档案做基准增量合并
             current = self.player_db.get_player_profile()
+            has_baseline = current is not None and (current.coins > 0 or current.ingots > 0)
             if current is None:
                 current = PlayerProfileRecord(player_id=self.player_id)
 
@@ -218,7 +233,7 @@ class SqliteStorageSubscriber:
                     changed = True
                 elif prop_id == 19:
                     new_ingots = int(val)
-                    if new_ingots != current.ingots:
+                    if has_baseline and new_ingots != current.ingots:
                         ingot_diff = new_ingots - current.ingots
                         tx_ingot = AssetTransactionRecord(
                             asset_type="ingot",
@@ -234,7 +249,7 @@ class SqliteStorageSubscriber:
                     changed = True
                 elif prop_id == 20:
                     new_coins = int(val)
-                    if new_coins != current.coins:
+                    if has_baseline and new_coins != current.coins:
                         coin_diff = new_coins - current.coins
                         tx_coin = AssetTransactionRecord(
                             asset_type="coin",
@@ -257,6 +272,18 @@ class SqliteStorageSubscriber:
                 elif prop_id == 39:
                     current.vip_level = int(val)
                     changed = True
+
+            if not has_baseline and (current.coins > 0 or current.ingots > 0):
+                today_summary = self.player_db.get_today_asset_summary()
+                if today_summary is None:
+                    init_summary = DailyAssetSummaryRecord(
+                        stat_date=time.strftime("%Y-%m-%d"),
+                        opening_coins=current.coins,
+                        closing_coins=current.coins,
+                        opening_ingots=current.ingots,
+                        closing_ingots=current.ingots,
+                    )
+                    self.player_db.save_daily_asset_summary(init_summary)
 
             if changed:
                 self.worker.submit_profile(current)

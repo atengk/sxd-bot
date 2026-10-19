@@ -122,7 +122,7 @@ def create_app(
     app = FastAPI(
         title="神仙道无头协议自动化控制台",
         description="现代化神仙道自动化 Web 管理后台与多账号调度 API",
-        version="1.1.0",
+        version="1.1.1",
     )
 
     app.state.start_time = time.time()

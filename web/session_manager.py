@@ -23,6 +23,8 @@ from protocol.builder import PacketBuilder
 from services.query_service import QueryService
 from storage.config_db import ConfigDatabase, AccountRecord
 from storage.player_db import PlayerDatabase
+from storage.worker import StorageWorker
+from storage.subscriber import SqliteStorageSubscriber
 
 from tasks.routine.login import LoginTask
 from tasks.routine.heartbeat import HeartbeatTask
@@ -152,8 +154,18 @@ class AccountSessionManager:
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._silent_probes: Dict[str, float] = {}
         self._player_dbs: Dict[str, PlayerDatabase] = {}
+        self._workers: Dict[str, StorageWorker] = {}
+        self._subscribers: Dict[str, SqliteStorageSubscriber] = {}
         self._hosting_tasks: Dict[str, asyncio.Task] = {}
         self._account_locks: Dict[str, asyncio.Lock] = {}
+
+    def get_worker(self, alias: str) -> Optional[StorageWorker]:
+        """获取指定账号绑定的专属后台写盘 Worker 实例"""
+        return self._workers.get(alias)
+
+    def get_subscriber(self, alias: str) -> Optional[SqliteStorageSubscriber]:
+        """获取指定账号绑定的专属协议切面订阅器实例"""
+        return self._subscribers.get(alias)
 
     def _get_account_lock(self, alias: str) -> asyncio.Lock:
         """获取账号独占异步锁，避免并发网络发包冲突"""
@@ -436,11 +448,17 @@ class AccountSessionManager:
             self._sessions[alias]["connection_status"] = "disconnected"
             self._sessions[alias]["hosting_enabled"] = False
             active_client = self._sessions[alias].pop("client", None)
+            self._sessions[alias].pop("event_bus", None)
             if active_client:
                 try:
                     active_client.abort()
                 except Exception:
                     pass
+
+        worker = self._workers.pop(alias, None)
+        if worker:
+            worker.stop()
+        self._subscribers.pop(alias, None)
 
         if alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
             self._hosting_tasks[alias].cancel()
@@ -575,14 +593,16 @@ class AccountSessionManager:
                     continue
 
                 ctx = GameContext()
-                client = SXDClient(context=ctx, event_bus=self.event_bus)
+                session_bus = EventBus()
+                client = SXDClient(context=ctx, event_bus=session_bus)
                 self._sessions.setdefault(alias, {})["client"] = client
+                self._sessions[alias]["event_bus"] = session_bus
 
                 # 挂载顶号协议监听 (Mod 100 Act 22 或 Mod 0 Act 15)
                 async def _on_packet(mod: int, act: int, payload: bytes) -> None:
                     self.handle_protocol_notification(alias, mod, act)
 
-                self.event_bus.subscribe_all(_on_packet)
+                session_bus.subscribe_all(_on_packet)
 
                 connected = await client.connect(creds.server_host, creds.server_port, timeout_sec=8.0)
                 if not connected:
@@ -590,6 +610,8 @@ class AccountSessionManager:
                     backoff_idx += 1
                     logger.warning("[%s] 连接网关 %s:%d 失败，退避 %.1f 秒后重试...", alias, creds.server_host, creds.server_port, delay)
                     self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    self._sessions[alias].pop("client", None)
+                    self._sessions[alias].pop("event_bus", None)
                     self.event_bus.publish(
                         "ACCOUNT_DISCONNECTED",
                         {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
@@ -605,6 +627,8 @@ class AccountSessionManager:
                     backoff_idx += 1
                     logger.warning("[%s] 托管登录认证失败: %s，退避 %.1f 秒后重试...", alias, login_res.message, delay)
                     self._sessions.setdefault(alias, {})["connection_status"] = "disconnected"
+                    self._sessions[alias].pop("client", None)
+                    self._sessions[alias].pop("event_bus", None)
                     self.event_bus.publish(
                         "ACCOUNT_DISCONNECTED",
                         {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
@@ -620,6 +644,7 @@ class AccountSessionManager:
                 self._sessions.setdefault(alias, {})
                 self._sessions[alias]["connection_status"] = "connected"
                 self._sessions[alias]["client"] = client
+                self._sessions[alias]["event_bus"] = session_bus
                 self._sessions[alias]["context"] = ctx
                 self._sessions[alias]["last_heartbeat"] = time.time()
                 self._sessions[alias]["hosting_enabled"] = True
@@ -642,6 +667,23 @@ class AccountSessionManager:
                     self.db.update_account_player_id(alias, ctx.player.player_id)
                 pdb = PlayerDatabase(server_id=creds.server_id, player_id=ctx.player.player_id, base_dir="data")
                 self.set_player_db(alias, pdb)
+
+                # 启动并挂载该账号专属的持久化 Worker 与切面订阅器
+                old_worker = self._workers.pop(alias, None)
+                if old_worker:
+                    old_worker.stop()
+                worker = StorageWorker(pdb)
+                worker.start()
+                self._workers[alias] = worker
+
+                subscriber = SqliteStorageSubscriber(
+                    worker=worker,
+                    player_db=pdb,
+                    player_id=ctx.player.player_id,
+                    context=ctx,
+                )
+                subscriber.attach_to_event_bus(session_bus)
+                self._subscribers[alias] = subscriber
 
                 try:
                     query_srv = QueryService(client=client, context=ctx, player_db=pdb)
@@ -706,7 +748,12 @@ class AccountSessionManager:
 
                 self._sessions[alias]["connection_status"] = "disconnected"
                 self._sessions[alias].pop("client", None)
+                self._sessions[alias].pop("event_bus", None)
                 await client.disconnect()
+                worker = self._workers.pop(alias, None)
+                if worker:
+                    worker.stop()
+                self._subscribers.pop(alias, None)
                 self.event_bus.publish(
                     "ACCOUNT_DISCONNECTED",
                     {"type": "ACCOUNT_DISCONNECTED", "alias": alias, "timestamp": time.time()},
@@ -727,11 +774,16 @@ class AccountSessionManager:
             except asyncio.CancelledError:
                 logger.info("[%s] 托管工作协程安全取消", alias)
                 active_client = self._sessions.get(alias, {}).pop("client", None)
+                self._sessions.get(alias, {}).pop("event_bus", None)
                 if active_client:
                     try:
                         active_client.abort()
                     except Exception:
                         pass
+                worker = self._workers.pop(alias, None)
+                if worker:
+                    worker.stop()
+                self._subscribers.pop(alias, None)
                 break
             except Exception as exc:
                 logger.error("[%s] 托管工作协程异常: %s", alias, exc, exc_info=True)
@@ -765,11 +817,17 @@ class AccountSessionManager:
 
         # 1. 若存在活跃 client，底层通过 transport.abort() 瞬间强杀以释放网关会话
         active_client = self._sessions[alias].pop("client", None)
+        self._sessions[alias].pop("event_bus", None)
         if active_client:
             try:
                 active_client.abort()
             except Exception as e:
                 logger.warning("[%s] 强杀活跃连接异常: %s", alias, e)
+
+        worker = self._workers.pop(alias, None)
+        if worker:
+            worker.stop()
+        self._subscribers.pop(alias, None)
 
         # 2. 立即取消当前常驻守护协程，杜绝后台重试与抢线
         if alias in self._hosting_tasks and not self._hosting_tasks[alias].done():
@@ -1002,6 +1060,7 @@ class AccountSessionManager:
                 temp_client = False
                 client: Optional[SXDClient] = None
                 ctx: Optional[GameContext] = None
+                temp_worker: Optional[StorageWorker] = None
 
                 try:
                     # 1. 优先复用当前活跃托管长连接；若无则创建临时无头连接
@@ -1054,7 +1113,8 @@ class AccountSessionManager:
                             return
 
                         ctx = GameContext()
-                        client = SXDClient(context=ctx, event_bus=self.event_bus)
+                        routine_bus = EventBus()
+                        client = SXDClient(context=ctx, event_bus=routine_bus)
 
                         self.event_bus.publish(
                             "routine_step",
@@ -1108,6 +1168,16 @@ class AccountSessionManager:
                             self.db.update_account_player_id(alias, ctx.player.player_id)
                         pdb = PlayerDatabase(server_id=creds.server_id, player_id=ctx.player.player_id, base_dir="data")
                         self.set_player_db(alias, pdb)
+
+                        temp_worker = StorageWorker(pdb)
+                        temp_worker.start()
+                        temp_subscriber = SqliteStorageSubscriber(
+                            worker=temp_worker,
+                            player_db=pdb,
+                            player_id=ctx.player.player_id,
+                            context=ctx,
+                        )
+                        temp_subscriber.attach_to_event_bus(routine_bus)
 
                     # 2. 依次调度执行各子任务
                     for r in routines:
@@ -1258,6 +1328,9 @@ class AccountSessionManager:
                     )
                     logger.error("[%s] 日常流水线异步执行发生异常: %s", alias, exc, exc_info=True)
                 finally:
+                    if temp_worker:
+                        temp_worker.flush()
+                        temp_worker.stop()
                     if temp_client and client:
                         await client.disconnect()
 
@@ -1293,7 +1366,9 @@ class AccountSessionManager:
             session = self._sessions.get(alias, {})
             client = session.get("client")
             ctx = session.get("context")
+            sync_bus = session.get("event_bus")
             temp_client = False
+            temp_worker: Optional[StorageWorker] = None
 
             try:
                 if not (client and client.context.is_connected and ctx):
@@ -1314,7 +1389,8 @@ class AccountSessionManager:
                         return {"success": False, "message": "无法解析账号凭据或缺少关键认证信息"}
 
                     ctx = GameContext()
-                    client = SXDClient(context=ctx, event_bus=self.event_bus)
+                    sync_bus = EventBus()
+                    client = SXDClient(context=ctx, event_bus=sync_bus)
                     connected = await client.connect(creds.server_host, creds.server_port, timeout_sec=8.0)
                     if not connected:
                         return {"success": False, "message": "无法连接游戏网关"}
@@ -1330,8 +1406,22 @@ class AccountSessionManager:
                 pdb = PlayerDatabase(server_id=acc.server_id, player_id=ctx.player.player_id, base_dir="data")
                 self.set_player_db(alias, pdb)
 
+                if temp_client and sync_bus:
+                    temp_worker = StorageWorker(pdb)
+                    temp_worker.start()
+                    temp_subscriber = SqliteStorageSubscriber(
+                        worker=temp_worker,
+                        player_db=pdb,
+                        player_id=ctx.player.player_id,
+                        context=ctx,
+                    )
+                    temp_subscriber.attach_to_event_bus(sync_bus)
+
                 query_srv = QueryService(client=client, context=ctx, player_db=pdb)
                 await query_srv.query_all(timeout_sec=3.0)
+
+                if temp_worker:
+                    temp_worker.flush()
 
                 self.event_bus.publish(
                     "telemetry_updated",
@@ -1351,6 +1441,8 @@ class AccountSessionManager:
                 logger.error("[%s] 态势感知同步异常: %s", alias, e)
                 return {"success": False, "message": str(e)}
             finally:
+                if temp_worker:
+                    temp_worker.stop()
                 if temp_client and client:
                     await client.disconnect()
 
