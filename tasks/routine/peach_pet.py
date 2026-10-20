@@ -83,15 +83,7 @@ class PeachAndPetTask(BaseTask):
         except Exception as exc:
             logger.info("执行批量摘仙桃跳过: %s", exc)
 
-        # 4. 召唤/结算白猿仙桃 (Mod 40, Act 6: call_peach，零元宝)
-        try:
-            req_call = PacketBuilder(mod=40, act=6).build()
-            resp_call = await client.request(req_call, timeout_sec=1.5)
-            logger.debug("仙桃白猿状态结算响应: %s", resp_call.hex())
-        except Exception:
-            pass
-
-        # 5. 每日帮派神龙培养与喂养 (Mod 48, Act 2: feed_pet_animal，严格免费/铜钱档位 feed_type=0，零元宝)
+        # 4. 每日帮派神龙培养与喂养 (Mod 48, Act 2: feed_pet_animal，严格免费/铜钱档位 feed_type=0，零元宝)
         try:
             req_pet = PacketBuilder(mod=48, act=2).write_uint8(0).build()
             resp_pet = await client.request(req_pet, timeout_sec=1.5)

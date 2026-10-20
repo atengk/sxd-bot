@@ -140,8 +140,11 @@ class SqliteStorageSubscriber:
         # 7. 订阅帮派祭神模块 (Mod 41)
         event_bus.subscribe(41, 1, self._on_worship_mars)
 
+        # 8. 订阅出站元宝防火墙拦截事件 (事前双轨审计)
+        event_bus.subscribe_event("INGOT_BLOCKED", self._on_ingot_blocked)
+
         logger.info(
-            "SqliteStorageSubscriber 已成功挂载至 EventBus (Mod 0, 2, 4, 13, 22, 28, 41 协议监听已就绪)"
+            "SqliteStorageSubscriber 已成功挂载至 EventBus (Mod 0, 2, 4, 13, 22, 28, 41 协议与 INGOT_BLOCKED 监听已就绪)"
         )
 
     async def _on_player_info(self, mod: int, act: int, payload: bytes) -> None:
@@ -178,6 +181,20 @@ class SqliteStorageSubscriber:
                     )
                     self.worker.submit_asset_transaction(tx_ingot)
                     logger.info("切面已捕获上线微端元宝差额: 当前=%d, 变动=%+d", resp.ingots, ingot_delta)
+                    if ingot_delta < 0:
+                        self.record_hazardous_audit(
+                            module_id=mod,
+                            action_id=act,
+                            action_name="[元宝消耗] 微端/外部变动",
+                            allow_ingot=False,
+                            details={
+                                "stage": "post_login_delta",
+                                "delta": ingot_delta,
+                                "previous_balance": current.ingots,
+                                "current_balance": resp.ingots,
+                                "reason": "微端/外部变动",
+                            },
+                        )
             else:
                 # 首次建档无基线 (Q2-A): 仅作为期初结余，不计流水，直接确保当日汇总期初就绪
                 today_summary = self.player_db.get_today_asset_summary()
@@ -245,6 +262,23 @@ class SqliteStorageSubscriber:
                         )
                         self.worker.submit_asset_transaction(tx_ingot)
                         logger.info("切面记录元宝收支流水: %+d (余额 %d, 来源: %s)", ingot_diff, new_ingots, reason)
+
+                        # 双轨审计事后差额轨迹: 任何元宝消耗 (ingot_diff < 0) 强制记入 tb_audit_log
+                        if ingot_diff < 0:
+                            self.record_hazardous_audit(
+                                module_id=mod,
+                                action_id=act,
+                                action_name=f"[元宝消耗] {reason}",
+                                allow_ingot=False,
+                                details={
+                                    "stage": "post_egress_delta",
+                                    "delta": ingot_diff,
+                                    "previous_balance": current.ingots,
+                                    "current_balance": new_ingots,
+                                    "reason": reason,
+                                    "active_task": task_key,
+                                },
+                            )
                     current.ingots = new_ingots
                     changed = True
                 elif prop_id == 20:
@@ -478,3 +512,34 @@ class SqliteStorageSubscriber:
             action_name,
             allow_ingot,
         )
+
+    def _on_ingot_blocked(self, event_type_or_data: Any, maybe_data: Any = None) -> None:
+        """监听出站元宝防火墙拦截广播并记入安全审计 (事前审计)
+
+        Args:
+            event_type_or_data: 事件类型字符串或载荷字典。
+            maybe_data: 事件载荷字典 (若第一个参数为事件类型)。
+        """
+        try:
+            data = maybe_data if maybe_data is not None else event_type_or_data
+            if not isinstance(data, dict):
+                return
+            mod = int(data.get("module_id", 0))
+            act = int(data.get("action_id", 0))
+            action_name = str(data.get("action_name", "未知高危操作"))
+            reason = str(data.get("reason", "出站防火墙拦截"))
+
+            task_key = self.context.active_task_name if self.context else None
+            self.record_hazardous_audit(
+                module_id=mod,
+                action_id=act,
+                action_name=f"[防火墙拦截] {action_name}",
+                allow_ingot=False,
+                details={
+                    "stage": "pre_egress_firewall",
+                    "reason": reason,
+                    "active_task": task_key,
+                },
+            )
+        except Exception as exc:
+            logger.error("写入出站元宝拦截审计异常: %s", exc)

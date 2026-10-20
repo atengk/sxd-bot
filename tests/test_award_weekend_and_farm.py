@@ -12,7 +12,7 @@
 """
 
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from core.context import GameContext
 from network.client import SXDClient
 from tasks.base import TaskStatus
@@ -90,7 +90,8 @@ class TestAwardWeekendAndFarm(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["claimed_gifts"], 3)
         self.assertEqual(claimed_ids, [22115, 22116, 22117])
 
-    async def test_weekend_revelry_prize_draw(self) -> None:
+    @patch.object(WeekendRevelryTask, "is_weekend", return_value=True)
+    async def test_weekend_revelry_prize_draw(self, mock_is_weekend) -> None:
         """测试【周末狂欢】周六/周日抽取奖励流水线"""
         task = WeekendRevelryTask()
 

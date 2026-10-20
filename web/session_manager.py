@@ -487,50 +487,94 @@ class AccountSessionManager:
                 # 1. 仙府药园收获与补种 (Mod 13)
                 from tasks.routine.farm import FarmTask
                 r_cfg = self.db.get_routine_config(alias)
-                await FarmTask(plant_type=getattr(r_cfg, "farm_plant_type", "auto")).execute(client, ctx)
+                ctx.set_active_task("farm")
+                try:
+                    await FarmTask(plant_type=getattr(r_cfg, "farm_plant_type", "auto")).execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 2. 果园：齐天大圣摘仙桃与果园仙树 (Mod 40)
                 from tasks.routine.peach_pet import PeachAndPetTask
-                await PeachAndPetTask().execute(client, ctx)
+                ctx.set_active_task("peach_pet")
+                try:
+                    await PeachAndPetTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 3. 城镇打坐挂机经验结算与无缝续练 (Mod 0)
                 from tasks.routine.practice import PracticeTask
-                await PracticeTask().execute(client, ctx)
+                ctx.set_active_task("practice")
+                try:
+                    await PracticeTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 4. 【领取奖励】大厅与全服福利总管 (Mod 2, Mod 20, Mod 28, Mod 712, Mod 89)
                 from tasks.routine.take_award import TakeAwardTask
-                await TakeAwardTask().execute(client, ctx)
+                ctx.set_active_task("take_award")
+                try:
+                    await TakeAwardTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 5. 仙道问灵求签与奖励闭环 (Mod 503)
                 from tasks.routine.ask_fairy import AskFairyTask
-                await AskFairyTask().execute(client, ctx)
+                ctx.set_active_task("ask_fairy")
+                try:
+                    await AskFairyTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 6. 版本更新福利与维护补偿 (Mod 240)
                 from tasks.routine.release_welfare import ReleaseWelfareTask
-                await ReleaseWelfareTask().execute(client, ctx)
+                ctx.set_active_task("release_welfare")
+                try:
+                    await ReleaseWelfareTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 7. 周末狂欢礼包、委托与转盘免费抽取 (Mod 637, 638, 242, 644)
                 from tasks.routine.weekend import WeekendRevelryTask
-                await WeekendRevelryTask().execute(client, ctx)
+                ctx.set_active_task("weekend")
+                try:
+                    await WeekendRevelryTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
                 # 8. 点金助友 (Mod 551)
                 from tasks.routine.touch_stone import GoldenTouchStoneTask
-                await GoldenTouchStoneTask().execute(client, ctx)
+                ctx.set_active_task("touch_stone")
+                try:
+                    await GoldenTouchStoneTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
-                # 8. 背包消耗品与宝箱安全自动使用 (Mod 2: use_only=True, 绝不丢弃存仓)
+                # 9. 背包消耗品与宝箱安全自动使用 (Mod 2: use_only=True, 绝不丢弃存仓)
                 from tasks.routine.item_clean import ItemCleanTask
-                await ItemCleanTask(target_empty=5, force_all=False, use_only=True).execute(client, ctx)
+                ctx.set_active_task("item_clean")
+                try:
+                    await ItemCleanTask(target_empty=5, force_all=False, use_only=True).execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
-                # 9. 体力防溢出自动扫荡 (若当前体力 >= 5 则消耗体力)
+                # 10. 体力防溢出自动扫荡 (若当前体力 >= 5 则消耗体力)
                 if ctx.player.power >= 5:
                     from tasks.battle.normal_mission import NormalMissionSweepTask
-                    await NormalMissionSweepTask().execute(client, ctx)
+                    ctx.set_active_task("normal_mission")
+                    try:
+                        await NormalMissionSweepTask().execute(client, ctx)
+                    finally:
+                        ctx.clear_active_task()
 
-                # 10. 小助手活跃度领奖 (Mod 52)
+                # 11. 小助手活跃度领奖 (Mod 52)
                 from tasks.routine.assistant import AssistantTask
-                await AssistantTask().execute(client, ctx)
+                ctx.set_active_task("assistant")
+                try:
+                    await AssistantTask().execute(client, ctx)
+                finally:
+                    ctx.clear_active_task()
 
-                # 11. 全景态势即查即存与推流
+                # 12. 全景态势即查即存与推流
                 pdb = self.get_player_db(alias)
                 if pdb:
                     query_srv = QueryService(client=client, context=ctx, player_db=pdb)

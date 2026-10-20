@@ -7,6 +7,7 @@
 from core.context import GameContext, PlayerState, TownState
 from core.events import EventBus
 from core.config import AccountConfig, SettingsConfig, AppConfig, ConfigManager
+from core.security import IngotSecurityException, IngotFirewall
 
 __all__ = [
     "GameContext",
@@ -17,4 +18,6 @@ __all__ = [
     "SettingsConfig",
     "AppConfig",
     "ConfigManager",
+    "IngotSecurityException",
+    "IngotFirewall",
 ]

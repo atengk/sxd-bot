@@ -9,9 +9,11 @@
 import asyncio
 import logging
 import struct
+import time
 from typing import Optional, Dict, List, Tuple
 from core.context import GameContext
 from core.events import EventBus
+from core.security import IngotFirewall, IngotSecurityException
 from protocol.frame import FrameFSM
 from protocol.packet import BasePacket, ByteArrayReader
 from protocol.messages.player import PlayerLoginResp, PlayerInfoResp
@@ -120,15 +122,34 @@ class SXDClient:
         self._frame_fsm.clear()
         logger.warning("TCP 长连接已被底层强杀 (transport.abort) 并瞬间重置状态")
 
-    async def send_packet(self, packet: BasePacket) -> None:
+    async def send_packet(self, packet: BasePacket, allow_ingot: bool = False) -> None:
         """向服务端发送单向指令封包 (不等待回复)
 
         Args:
             packet: 实现了 to_network_frame 的数据包实例。
+            allow_ingot: 是否显式授权消耗元宝 (默认 False)。
         """
         if not self._running or self._writer is None:
             raise ConnectionError("当前未处于已连接状态，无法发送数据包")
 
+        # 1. 出站元宝安全防火墙硬性校验
+        is_safe, action_name, reason = IngotFirewall.check_egress(packet, allow_ingot=allow_ingot)
+        if not is_safe:
+            logger.error("[FIREWALL BLOCKED] %s", reason)
+            if self.event_bus:
+                self.event_bus.publish(
+                    "INGOT_BLOCKED",
+                    {
+                        "module_id": packet.mod,
+                        "action_id": packet.act,
+                        "action_name": action_name,
+                        "reason": reason,
+                        "timestamp": time.time(),
+                    },
+                )
+            raise IngotSecurityException(reason, mod=packet.mod, act=packet.act, action_name=action_name)
+
+        # 2. 写入底层套接字并刷新缓冲
         frame_bytes = packet.to_network_frame()
         self._writer.write(frame_bytes)
         await self._writer.drain()
@@ -139,6 +160,7 @@ class SXDClient:
         packet: BasePacket,
         timeout_sec: float = 5.0,
         response_mod_act: Optional[Tuple[int, int]] = None,
+        allow_ingot: bool = False,
     ) -> bytes:
         """串行管道化发送业务请求并等待对应回复载荷
 
@@ -146,6 +168,7 @@ class SXDClient:
             packet: 待发送的数据包实例。
             timeout_sec: 等待应答超时秒数。
             response_mod_act: 期待的目标应答 (Mod, Act)，若未指定则默认与发送端相同。
+            allow_ingot: 是否显式授权消耗元宝 (默认 False)。
 
         Returns:
             服务端回复的二进制 Payload 载荷字节。
@@ -161,9 +184,9 @@ class SXDClient:
                 self._pending_futures[target_key] = []
             self._pending_futures[target_key].append(fut)
 
-            # 2. 发送请求报文
+            # 2. 发送请求报文 (防火墙将在 send_packet 前置拦截)
             try:
-                await self.send_packet(packet)
+                await self.send_packet(packet, allow_ingot=allow_ingot)
                 # 3. 挂起等待结果
                 return await asyncio.wait_for(fut, timeout=timeout_sec)
             except asyncio.TimeoutError:
@@ -172,6 +195,8 @@ class SXDClient:
             finally:
                 if target_key in self._pending_futures and fut in self._pending_futures[target_key]:
                     self._pending_futures[target_key].remove(fut)
+                    if not self._pending_futures[target_key]:
+                        self._pending_futures.pop(target_key, None)
 
     async def _read_loop(self) -> None:
         """底层异步持续收包循环"""
