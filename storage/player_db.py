@@ -144,7 +144,8 @@ class DailyAssetSummaryRecord:
     updated_at: float = field(default_factory=time.time)
 
 
-MAX_ASSET_TRANSACTION_RECORDS = 2000
+MAX_ASSET_TRANSACTION_RECORDS = 500
+MAX_ASSET_TRANSACTION_RETENTION_DAYS = 7
 
 
 class PlayerDatabase:
@@ -195,10 +196,11 @@ class PlayerDatabase:
         conn = sqlite3.connect(self.db_path)
         try:
             with conn:
-                # 1. 启用 WAL 高并发无锁读模式与短超时防御
+                # 1. 启用 WAL 高并发无锁读模式、轻量碎片自愈与短超时防御
                 conn.execute("PRAGMA journal_mode = WAL;")
                 conn.execute("PRAGMA synchronous = NORMAL;")
                 conn.execute("PRAGMA busy_timeout = 5000;")
+                conn.execute("PRAGMA auto_vacuum = INCREMENTAL;")
 
                 # 2. 角色核心基础信息单行表
                 conn.execute(
@@ -570,12 +572,14 @@ class PlayerDatabase:
         self,
         rec: AssetTransactionRecord,
         max_records: int = MAX_ASSET_TRANSACTION_RECORDS,
+        retention_days: int = MAX_ASSET_TRANSACTION_RETENTION_DAYS,
     ) -> None:
-        """记录一条资产收支流水，执行 FIFO 淘汰并即时增量更新每日汇总表 (Stream-driven Upsert)
+        """记录一条资产收支流水，执行双重轻量淘汰并即时增量更新每日汇总表 (Stream-driven Upsert)
 
         Args:
             rec: 资产收支流水实体。
-            max_records: 明细表最大保留条数 (FIFO 淘汰门槛)。
+            max_records: 明细表最大保留条数 (FIFO 淘汰门槛，默认 500 笔)。
+            retention_days: 明细表最长保留天数 (过期清理门槛，默认 7 天)。
         """
         stat_date = time.strftime("%Y-%m-%d", time.localtime(rec.created_at))
         with self.connect() as conn:
@@ -590,7 +594,14 @@ class PlayerDatabase:
                 )
                 rec.id = cursor.lastrowid
 
-                # 2. 明细流水表 FIFO 自动滚动淘汰
+                # 2. 双重轻量淘汰 (先清超期后控总额)
+                if retention_days > 0:
+                    expire_ts = rec.created_at - (retention_days * 86400.0)
+                    conn.execute(
+                        "DELETE FROM tb_asset_transaction WHERE created_at < ?",
+                        (expire_ts,),
+                    )
+
                 conn.execute(
                     """
                     DELETE FROM tb_asset_transaction
@@ -894,5 +905,15 @@ class PlayerDatabase:
                         now,
                     ),
                 )
+
+    def compact_database(self) -> None:
+        """执行轻量级碎片整理与空间回收 (PRAGMA incremental_vacuum)"""
+        with self.connect() as conn:
+            try:
+                conn.execute("PRAGMA incremental_vacuum(50)")
+                logger.debug("已完成数据库碎片轻量级增量回收 (PlayerID=%d)", self.player_id)
+            except Exception as exc:
+                logger.debug("数据库增量碎片整理跳过: %s", exc)
+
 
 

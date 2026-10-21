@@ -820,15 +820,104 @@
                 <button @click="drawer.assetChartMode = 'ingots'" :class="drawer.assetChartMode === 'ingots' ? 'bg-white dark:bg-slate-700 text-sky-600 dark:text-sky-400 font-bold shadow-xs' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'" class="px-2 py-0.5 rounded transition">元宝走势</button>
               </div>
             </div>
-            <div class="h-32 w-full flex items-end space-x-3 pt-4 border-b border-slate-200 dark:border-slate-800">
-              <div v-for="(h, idx) in (drawer.auditLogs?.asset_history || [])" :key="idx" class="flex-1 flex flex-col items-center gap-1">
-                <div class="w-full rounded-t transition-all duration-300"
-                     :class="drawer.assetChartMode === 'coins' ? (idx === (drawer.auditLogs.asset_history.length - 1) ? 'bg-amber-500 shadow-md shadow-amber-500/40' : 'bg-amber-500/80') : (idx === (drawer.auditLogs.asset_history.length - 1) ? 'bg-sky-500 shadow-md shadow-sky-500/40' : 'bg-sky-500/80')"
-                     :style="{ height: getAssetBarHeight(drawer.assetChartMode === 'coins' ? h.coins : h.ingots, drawer.assetChartMode) + '%' }"
-                     :title="`${h.date}\n` + (drawer.assetChartMode === 'coins' ? `期末铜钱: ${formatCoins(h.coins)}\n今日收入: +${formatCoins(h.coins_income || 0)}\n今日支出: -${formatCoins(h.coins_expense || 0)}` : `期末元宝: ${h.ingots}\n今日收入: +${h.ingots_income || 0}\n今日支出: -${h.ingots_expense || 0}`)">
-                </div>
-                <span class="text-[10px]" :class="idx === (drawer.auditLogs.asset_history.length - 1) ? (drawer.assetChartMode === 'coins' ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-sky-600 dark:text-sky-400 font-bold') : 'text-slate-500 dark:text-slate-400'">{{ idx === (drawer.auditLogs.asset_history.length - 1) ? '今日' : h.date }}</span>
+            <!-- SVG 7日资产走势面积折线图 -->
+            <div class="relative w-full h-36 border-b border-slate-200 dark:border-slate-800 pt-2 pb-1 flex flex-col justify-between">
+              <!-- 空状态提示 -->
+              <div v-if="!assetChartMeta || !assetChartMeta.points.length" class="h-full flex items-center justify-center text-xs text-slate-400">
+                暂无 7 日资产走势数据
               </div>
+
+              <template v-else>
+                <!-- SVG 主图表 -->
+                <div class="relative w-full h-24">
+                  <svg class="w-full h-full overflow-visible" viewBox="0 0 500 100" preserveAspectRatio="none">
+                    <defs>
+                      <!-- 铜钱渐变 (琥珀金) -->
+                      <linearGradient id="coinsGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.38"/>
+                        <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.02"/>
+                      </linearGradient>
+                      <!-- 元宝渐变 (天空蓝) -->
+                      <linearGradient id="ingotsGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#0284c7" stop-opacity="0.38"/>
+                        <stop offset="100%" stop-color="#0284c7" stop-opacity="0.02"/>
+                      </linearGradient>
+                    </defs>
+
+                    <!-- 背景基准参考虚线 -->
+                    <line x1="25" y1="20" x2="475" y2="20" stroke="currentColor" class="text-slate-100 dark:text-slate-800/80" stroke-width="1" stroke-dasharray="4,4"/>
+                    <line x1="25" y1="52" x2="475" y2="52" stroke="currentColor" class="text-slate-100 dark:text-slate-800/80" stroke-width="1" stroke-dasharray="4,4"/>
+                    <line x1="25" y1="84" x2="475" y2="84" stroke="currentColor" class="text-slate-100 dark:text-slate-800/80" stroke-width="1" stroke-dasharray="4,4"/>
+
+                    <!-- 阴影面积填充 -->
+                    <path :d="assetChartMeta.areaPath"
+                          :fill="drawer.assetChartMode === 'coins' ? 'url(#coinsGrad)' : 'url(#ingotsGrad)'"
+                          class="transition-all duration-300" />
+
+                    <!-- 折线描边 -->
+                    <path :d="assetChartMeta.linePath"
+                          fill="none"
+                          :stroke="drawer.assetChartMode === 'coins' ? '#f59e0b' : '#0284c7'"
+                          stroke-width="2.5"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          class="transition-all duration-300" />
+
+                    <!-- 悬浮竖向指示线 -->
+                    <line v-if="hoveredChartPoint"
+                          :x1="hoveredChartPoint.x" y1="12"
+                          :x2="hoveredChartPoint.x" y2="92"
+                          :stroke="drawer.assetChartMode === 'coins' ? '#f59e0b' : '#0284c7'"
+                          stroke-width="1.5"
+                          stroke-dasharray="3,3"
+                          class="opacity-75" />
+
+                    <!-- 数据节点圆点交互层 -->
+                    <g v-for="(pt, idx) in assetChartMeta.points" :key="idx"
+                       class="cursor-pointer"
+                       @mouseenter="hoveredChartPoint = pt"
+                       @mouseleave="hoveredChartPoint = null">
+                      <!-- 扩大热区 -->
+                      <circle :cx="pt.x" :cy="pt.y" r="16" fill="transparent" />
+                      <!-- 数据圆点 -->
+                      <circle :cx="pt.x" :cy="pt.y"
+                              :r="hoveredChartPoint === pt ? 6 : (idx === assetChartMeta.points.length - 1 ? 5 : 3.5)"
+                              :class="drawer.assetChartMode === 'coins' ? 'fill-amber-500 stroke-white dark:stroke-slate-900' : 'fill-sky-500 stroke-white dark:stroke-slate-900'"
+                              stroke-width="2"
+                              class="transition-all duration-150" />
+                    </g>
+                  </svg>
+
+                  <!-- 浮动 Tooltip -->
+                  <div v-if="hoveredChartPoint"
+                       class="absolute -top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none bg-slate-900/95 dark:bg-slate-800/95 text-white px-2.5 py-1 rounded-md text-[11px] shadow-lg border border-slate-700 backdrop-blur-xs flex items-center space-x-2">
+                    <span class="font-mono text-slate-300">{{ hoveredChartPoint.item.full_date || hoveredChartPoint.item.date }}</span>
+                    <span class="font-bold font-mono" :class="drawer.assetChartMode === 'coins' ? 'text-amber-400' : 'text-sky-400'">
+                      {{ drawer.assetChartMode === 'coins' ? formatCoins(hoveredChartPoint.val) : hoveredChartPoint.val.toLocaleString() + ' 元宝' }}
+                    </span>
+                    <span class="text-[10px] text-emerald-400 font-mono" v-if="drawer.assetChartMode === 'coins' && hoveredChartPoint.item.coins_income">
+                      +{{ formatCoins(hoveredChartPoint.item.coins_income) }}
+                    </span>
+                    <span class="text-[10px] text-rose-400 font-mono" v-if="drawer.assetChartMode === 'coins' && hoveredChartPoint.item.coins_expense">
+                      -{{ formatCoins(hoveredChartPoint.item.coins_expense) }}
+                    </span>
+                    <span class="text-[10px] text-emerald-400 font-mono" v-if="drawer.assetChartMode === 'ingots' && hoveredChartPoint.item.ingots_income">
+                      +{{ hoveredChartPoint.item.ingots_income }}
+                    </span>
+                    <span class="text-[10px] text-rose-400 font-mono" v-if="drawer.assetChartMode === 'ingots' && hoveredChartPoint.item.ingots_expense">
+                      -{{ hoveredChartPoint.item.ingots_expense }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- 底部 X 轴日期刻度 -->
+                <div class="flex justify-between px-2 text-[10px] text-slate-500 dark:text-slate-400">
+                  <span v-for="(h, idx) in assetChartMeta.history" :key="idx"
+                        :class="idx === assetChartMeta.history.length - 1 ? (drawer.assetChartMode === 'coins' ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-sky-600 dark:text-sky-400 font-bold') : ''">
+                    {{ idx === assetChartMeta.history.length - 1 ? '今日' : h.date }}
+                  </span>
+                </div>
+              </template>
             </div>
             <div class="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 mt-2">
               <span v-if="drawer.assetChartMode === 'coins'">初始: {{ formatCoins(drawer.auditLogs?.asset_history?.[0]?.coins) }}</span>
@@ -1394,6 +1483,60 @@
           return cells;
         });
 
+        // 7 日资产走势自适应 SVG 曲线与热区坐标计算
+        const hoveredChartPoint = ref(null);
+
+        const assetChartMeta = computed(() => {
+          const history = drawer.auditLogs?.asset_history || [];
+          if (!history.length) {
+            return { points: [], linePath: '', areaPath: '', history: [] };
+          }
+
+          const mode = drawer.assetChartMode || 'coins';
+          const vals = history.map(h => mode === 'ingots' ? (Number(h.ingots) || 0) : (Number(h.coins) || 0));
+          const minVal = Math.min(...vals);
+          const maxVal = Math.max(...vals);
+
+          // 自适应基准：当数据平缓或全零时给出动态安全视窗
+          let yMin = minVal;
+          let yMax = maxVal;
+          if (yMin === yMax) {
+            const spread = yMin === 0 ? 100 : Math.abs(yMin) * 0.1;
+            yMin = Math.max(0, yMin - spread);
+            yMax = yMax + spread;
+          } else {
+            const pad = (yMax - yMin) * 0.18;
+            yMin = Math.max(0, yMin - pad);
+            yMax = yMax + pad;
+          }
+
+          const xStart = 35;
+          const xEnd = 465;
+          const yTop = 22;
+          const yBottom = 82;
+          const baselineY = 88;
+          const stepX = history.length > 1 ? (xEnd - xStart) / (history.length - 1) : 0;
+
+          const points = history.map((item, idx) => {
+            const val = mode === 'ingots' ? (Number(item.ingots) || 0) : (Number(item.coins) || 0);
+            const x = Number((xStart + idx * stepX).toFixed(1));
+            const ratio = (yMax === yMin) ? 0.5 : (val - yMin) / (yMax - yMin);
+            const y = Number((yBottom - ratio * (yBottom - yTop)).toFixed(1));
+            return { x, y, val, item };
+          });
+
+          // 构造折线与封闭渐变区域 Path
+          const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+          const areaPath = `${linePath} L ${points[points.length - 1].x} ${baselineY} L ${points[0].x} ${baselineY} Z`;
+
+          return {
+            points,
+            linePath,
+            areaPath,
+            history,
+          };
+        });
+
         function getAssetBarHeight(val, mode = 'coins') {
           const history = drawer.auditLogs?.asset_history || [];
           const field = mode === 'ingots' ? 'ingots' : 'coins';
@@ -1935,6 +2078,7 @@
 
         // 抽屉详情加载
         async function openDrawer(alias) {
+          hoveredChartPoint.value = null;
           drawer.alias = alias;
           drawer.show = true;
           drawer.loading = true;
@@ -2236,6 +2380,8 @@
           averageLivenessRate,
           drawerInventory100,
           todaySummary,
+          hoveredChartPoint,
+          assetChartMeta,
           formatCoins,
           formatTime,
           formatProbeTime,

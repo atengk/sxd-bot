@@ -771,6 +771,15 @@ class AccountSessionManager:
                     if curr_day != last_routine_day and curr_hm >= "00:05":
                         logger.info("[%s] 检测到自然日跨天 (%s)，自动触发全员全量日常福利清盘流水线...", alias, curr_day)
                         last_routine_day = curr_day
+
+                        # 跨天轻量整理数据库碎片
+                        try:
+                            pdb = self.get_player_db(alias)
+                            if pdb:
+                                pdb.compact_database()
+                        except Exception as c_err:
+                            logger.debug("[%s] 跨天数据库碎片整理跳过: %s", alias, c_err)
+
                         try:
                             loop = asyncio.get_running_loop()
                             loop.create_task(self._safe_trigger_routine_async(alias))
